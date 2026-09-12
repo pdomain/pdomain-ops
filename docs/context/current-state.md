@@ -17,6 +17,9 @@ Kind: context
 
 ## What matters now
 
+Suite-wide status and the agent work order live in
+[`2026-09-12-suite-status-and-agent-allocation.md`](../plans/2026-09-12-suite-status-and-agent-allocation.md).
+
 Docgraph is initialized for this repository. Shipped OCR batching and GPU
 adapter ownership live in
 [`batched-ocr-dispatch.md`](../architecture/batched-ocr-dispatch.md). Page
