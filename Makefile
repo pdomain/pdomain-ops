@@ -42,7 +42,7 @@ define _require_peer_book_tools
 	fi
 endef
 
-.PHONY: help setup remove-venv reset reset-venv reset-full \
+.PHONY: help setup install-hooks remove-venv reset reset-venv reset-full \
         lint lint-check format format-check typecheck test ci ci-slow build clean pre-commit-check update-hooks dev-local \
         upgrade-deps release-patch release-minor release-major _do-release \
         local-setup local-dev local-check local-upgrade-deps \
@@ -54,7 +54,21 @@ help: ## Show this help message
 
 setup: ## Install dependencies (idempotent)
 	uv sync --group dev
-	@[ -f .git/hooks/pre-commit ] || uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
+	@$(MAKE) --no-print-directory install-hooks
+
+install-hooks: ## (Re)install pre-commit hooks (repairs a stale interpreter path)
+	@# `pre-commit install` bakes an absolute interpreter path into .git/hooks.
+	@# A hook written against a different environment name, or against a worktree
+	@# that has since been deleted, keeps failing until it is rewritten — and a
+	@# "skip if the file exists" guard never rewrites it. Rewriting costs ~0.2s,
+	@# so do it every time this repo owns its hooks directory.
+	@if [ -f .git ]; then \
+	  echo "hooks: worktree checkout — the canonical repo owns them, skipping"; \
+	elif [ -n "$$(git config --get core.hooksPath 2>/dev/null)" ]; then \
+	  echo "hooks: core.hooksPath is set — leaving it alone, skipping"; \
+	else \
+	  uv run pre-commit install --hook-type pre-commit --hook-type commit-msg; \
+	fi
 
 reset-venv: reset ## Alias for reset
 
