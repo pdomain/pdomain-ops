@@ -151,14 +151,14 @@ def is_editable_install(dist_name: str) -> bool:
     """Return True if *dist_name* is installed in editable / local-dev mode.
 
     Two detection paths:
-    1. ``.venv/.pd-local-mode`` marker file in the active venv.
+    1. ``.pd-local-mode`` marker file in the active venv.
     2. ``direct_url.json`` in the dist-info directory flags editable install
        via ``importlib.metadata``.
     """
     import importlib.metadata
     import sys
 
-    # Check .venv/.pd-local-mode marker
+    # Check the .pd-local-mode marker
     venv = Path(sys.prefix)
     if (venv / ".pd-local-mode").exists():
         return True

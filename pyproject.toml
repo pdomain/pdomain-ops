@@ -242,9 +242,13 @@ failOnWarnings = false
 # Actual import order issues surface as runtime ImportErrors.
 reportImportCycles = "none"
 
-# Tell basedpyright where the venv is so it finds third-party stubs.
-venvPath = "."
-venv = ".venv"
+# venvPath/venv are deliberately unset. This workspace names its environment
+# ".venv-container" via UV_PROJECT_ENVIRONMENT, so a hardcoded ".venv" silently
+# resolves a stale environment: after any merge that changes uv.lock, every new
+# third-party symbol reports as a missing attribute until .venv is re-synced.
+# Run under `uv run` and basedpyright resolves from the active interpreter.
+# Matches pdomain-book-tools, pdomain-ocr-labeler-spa and pdomain-pgdp-measure,
+# which unset these for the same reason.
 
 # Per-execution-environment overrides: tests and scripts get more leniency.
 # The shipped package (pdomain_ops) runs at the global "strict" mode (2026-07-15
@@ -301,6 +305,12 @@ markers = [
 ]
 filterwarnings = [
     "error",
+    # starlette 1.6.0 reads `anyio.abc.BlockingPortal` at import time, an
+    # alias anyio 4.15.1 deprecated. Importing the FastAPI test client is
+    # enough to raise it and nothing here can avoid that. Matched on the
+    # message so every other DeprecationWarning still fails. Drop this once
+    # starlette stops reading the deprecated alias.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
     # ResourceWarning from subprocess.Popen stdout/stderr PIPE left open
     # until GC in LocalLongJobRunner._supervise — pipes are read once then
     # orphaned by design; closing in finally would race with caller reads.

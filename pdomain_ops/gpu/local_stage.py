@@ -153,7 +153,7 @@ class LocalStageDispatcher:
             try:
                 from pdomain_book_tools.hf import resolve_ocr_models
                 from pdomain_book_tools.ocr.doctr_support import (
-                    get_finetuned_torch_doctr_predictor,  # pyright: ignore[reportUnknownVariableType]  # pdomain_book_tools boundary is partially untyped
+                    get_finetuned_torch_doctr_predictor,
                 )
             except ImportError:
                 return None  # No finetuned models available; run_doctr_batch will use CPU

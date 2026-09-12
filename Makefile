@@ -20,6 +20,18 @@ PEER_BOOK_TOOLS := $(realpath $(PEER_BOOK_TOOLS_PATH))
 GIT_COMMON_DIR := $(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
 CANONICAL_REPO_ROOT := $(patsubst %/,%,$(dir $(GIT_COMMON_DIR)))
 
+# ---------------------------------------------------------------------------
+# Project environment directory
+# ---------------------------------------------------------------------------
+# uv installs into UV_PROJECT_ENVIRONMENT when it is set and into .venv
+# otherwise, so mirror that rule rather than hardcoding either name. The
+# pd-suite devcontainer sets ".venv-container" because the workspace is a bind
+# mount shared with the host; a plain checkout outside a container gets .venv.
+VENV := $(if $(UV_PROJECT_ENVIRONMENT),$(UV_PROJECT_ENVIRONMENT),.venv)
+# Same directory addressed from the canonical repo root, so worktrees resolve
+# to the one real environment. UV_PROJECT_ENVIRONMENT may be absolute.
+CANONICAL_VENV := $(if $(filter /%,$(VENV)),$(VENV),$(CANONICAL_REPO_ROOT)/$(VENV))
+
 define _require_peer_book_tools
 	@if [ -z "$(PEER_BOOK_TOOLS)" ]; then \
 		echo ""; \
@@ -48,7 +60,7 @@ reset-venv: reset ## Alias for reset
 
 remove-venv: ## Remove the virtual environment
 	@echo "Removing existing virtual environment..."
-	rm -rf .venv
+	rm -rf $(VENV)
 	@echo "Virtual environment removed."
 
 reset: ## Rebuild virtual environment (keeps UV cache)
@@ -121,10 +133,10 @@ build: ## Build the project
 dev-local: ## [local-dev] Install pdomain-book-tools from ../pdomain-book-tools as editable in the venv
 	$(call _require_peer_book_tools)
 	@echo "Installing pdomain-book-tools editable from $(PEER_BOOK_TOOLS)..."
-	UV_LINK_MODE=copy uv pip install -e "$(PEER_BOOK_TOOLS)"
-	UV_LINK_MODE=copy uv pip install -e . --no-deps
-	UV_LINK_MODE=copy uv pip install --group dev
-	@touch .venv/.pdomain-local-mode
+	UV_LINK_MODE=copy uv pip install --python "$(VENV)/bin/python" -e "$(PEER_BOOK_TOOLS)"
+	UV_LINK_MODE=copy uv pip install --python "$(VENV)/bin/python" -e . --no-deps
+	UV_LINK_MODE=copy uv pip install --python "$(VENV)/bin/python" --group dev
+	@touch $(VENV)/.pdomain-local-mode
 	@echo "Local editable pdomain-book-tools is active in the venv."
 
 clean: ## Clean cache and temporary files (keeps venv and UV cache)
@@ -132,10 +144,10 @@ clean: ## Clean cache and temporary files (keeps venv and UV cache)
 
 upgrade-deps: ## Upgrade dependencies and sync local environment
 	@for marker in \
-		.venv/.pdomain-local-mode \
-		.venv/.pdomain-dev-local \
-		"$(CANONICAL_REPO_ROOT)/.venv/.pdomain-local-mode" \
-		"$(CANONICAL_REPO_ROOT)/.venv/.pdomain-dev-local"; do \
+		$(VENV)/.pdomain-local-mode \
+		$(VENV)/.pdomain-dev-local \
+		"$(CANONICAL_VENV)/.pdomain-local-mode" \
+		"$(CANONICAL_VENV)/.pdomain-dev-local"; do \
 		if [ -f "$$marker" ]; then \
 			echo "ERROR: leave local dependency mode before upgrade-deps ($$marker)"; \
 			exit 1; \
