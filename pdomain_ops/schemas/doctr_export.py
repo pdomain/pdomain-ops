@@ -13,11 +13,14 @@ import contextlib
 import json
 import logging
 import os
-import tempfile
 from datetime import datetime  # noqa: TC003  # Pydantic requires runtime import
-from pathlib import Path
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
@@ -92,21 +95,25 @@ def read_manifest(export_root: Path) -> DoctrExportManifest | None:
     return manifest
 
 
-def _shared_file_mode() -> int:
-    """The mode a plain ``open()`` would produce here: 0666 minus the umask.
+def _open_staged(path: Path) -> tuple[int, Path]:
+    """Create a staging file beside *path*, open for writing.
 
-    ``os.umask`` has no read-only form, so reading the umask means setting it
-    to zero and putting it back, and that is process-global. Calling this per
-    write would expose a zero umask to every other thread for those two
-    syscalls. Call it once at import instead, while the module is still
-    single-threaded, and reuse the result.
+    Not ``tempfile.mkstemp``: that hardcodes 0600 and ignores the umask, which
+    is right for a private scratch file and wrong for one about to be
+    published, because a rename preserves the mode. Passing the mode to
+    ``os.open`` lets the kernel apply the umask exactly as for a plain
+    ``open()``, so there is no chmod to forget and no umask to read. 0666, not
+    0777: nothing published this way is a program.
+
+    ``O_EXCL`` keeps ``mkstemp``'s guarantee that creation fails rather than
+    opening an existing file or following a symlink into one.
     """
-    value = os.umask(0)
-    _ = os.umask(value)
-    return 0o666 & ~value
-
-
-_FILE_MODE = _shared_file_mode()
+    while True:
+        staged = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+        try:
+            return os.open(staged, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666), staged
+        except FileExistsError:  # pragma: no cover - needs a uuid4 collision
+            continue
 
 
 def write_manifest(export_root: Path, manifest: DoctrExportManifest) -> None:
@@ -118,18 +125,12 @@ def write_manifest(export_root: Path, manifest: DoctrExportManifest) -> None:
     """
     export_root.mkdir(parents=True, exist_ok=True)
     dest = export_root / _MANIFEST_FILENAME
-    fd, tmp_name = tempfile.mkstemp(dir=export_root, prefix=".manifest-", suffix=".tmp")
+    fd, tmp_path = _open_staged(dest)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(manifest.model_dump_json(by_alias=True, indent=2))
-        # mkstemp hardcodes 0600 and ignores the umask by design, and a rename
-        # preserves that mode, so without this chmod the published file is
-        # unreadable to any other uid — the host's restic backup included.
-        # Start from 0666, never 0777: nothing written here is a program.
-        tmp_path = Path(tmp_name)
-        tmp_path.chmod(_FILE_MODE)
         tmp_path.replace(dest)
     except Exception:
         with contextlib.suppress(OSError):
-            Path(tmp_name).unlink()
+            tmp_path.unlink()
         raise
