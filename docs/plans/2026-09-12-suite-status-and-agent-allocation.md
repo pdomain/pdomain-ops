@@ -129,13 +129,13 @@ The four that never ran are deferred for this cycle, not dropped. Revisit them o
 
 ## The five decisions that unblock the most work
 
-Each of these is the owner's to make, and none needs engineering first.
+Three of the five were settled on 2026-09-12 and are recorded here as decisions. Two releases remain open.
 
-1. **Merge, open pull requests for, or hold the three page-kind branches.** The labeler branch is the one that unblocks other work.
-2. **Release `pdomain-pgdp-measure`.** This blocks page-kind Task 6, which turns a classifier residual into a confidence the labeler can show.
-3. **Release `pdomain-book-tools`** carrying the page-kind field, and bump the labeler's pin from 0.27.0. This blocks Task 7 and restores the 14 failing roles.
-4. **Close or restate Gate 3 on the glyph inventory.** Label correctness measures 0.978 against a floor of 0.98, and two of five books fail. Filtering five quality flags gives 0.994 with every book clear. Filtering is the only route that passes as measured. Re-running the alignment chain changes nothing, and showing label style recovers only three of the 23 marks.
-5. **Pick the text-chain design** in `pdomain-prep-for-pgdp`: compound wordcheck, rewiring the stage graph, or fan-in at the runner. Its own plan makes this the first step of the next session, and no pipeline work should start without it.
+1. **Merge the three page-kind branches. Settled: merged on 2026-09-12.** All three merged clean into their masters and were not pushed. Each master passed its own full gate after the merge, and `pdomain-pgdp-measure` now reports 1088 tests passing, up from the 1078 recorded when its branch was cut.
+2. **Release `pdomain-pgdp-measure`. Still open, and it needs a release path built first.** The repository has no CI workflow, no release workflow, and no release scripts. Copy the four files from `pdomain-book-contracts`, which is the closest match: its shared release driver is reusable as is, its own release script is ten lines, and it needs no release targets in its Makefile because `make ci` already covers the preflight. `pdomain-pgdp-measure` has the same shape. Then tag the first version. This blocks page-kind Task 6, which turns a classifier residual into a confidence the labeler can show.
+3. **Release `pdomain-book-tools` carrying the page-kind field. Still open.** Bump the labeler's pin from 0.27.0 at the same time. This blocks Task 7 and restores the 14 failing roles.
+4. **Gate 3 on the glyph inventory. Settled: gate on the filtered inventory.** Label correctness measures 0.978 against a floor of 0.98, and two of five books fail. Filtering the five quality flags measures 0.9942 with every book clear, and it was the only route that passes as measured. Re-running the alignment chain changes nothing, and showing label style recovers only three of the 23 marks.
+5. **The text-chain design in `pdomain-prep-for-pgdp`. Settled: rewire the stage graph, and load parent artifacts by consumer need.** Hyphen-join reads the OCR text directly, and wordcheck stays a parallel branch producing flags for the interface. Loading by consumer need is a mandatory fix under any of the three options, so it lands with this one. The rejected alternative had wordcheck emit page text it did not author.
 
 ## Where the ancillary apps stand
 
@@ -183,11 +183,13 @@ The three hosts share the same lint, type, and test gates, so split by task shap
 
 ## Sequence the first three weeks like this
 
-1. **Make the five decisions.** Nothing below starts cleanly without them.
-2. **Commit and verify the build fix.** Commit the exclusion in `pdomain-ops` and `pdomain-ocr-training`, run each repository's full gate and a build, and confirm the archive carries no environment files. If either gate or an install breaks, revert the exclusion line. Nothing else depends on it.
-3. **Merge the three branches, then cut the releases, in that order.** Book-tools cannot be released carrying the page-kind field until its branch merges. Release `pdomain-pgdp-measure` and `pdomain-book-tools` first, and consider `pdomain-ops`, `pdomain-ui`, and `pdomain-ocr-training` in the same pass to clear the drift, after step 2 lands.
-4. **Run Claude and Codex in parallel.** Claude takes page-kind Tasks 6 and 7 with the proposal-log guard, then region-routes Task 5. Codex takes Wave 0. The two touch no repository in common.
-5. **Start Grok at the same time.** Its four items block nothing and unblock an honest gate.
+Steps 1 to 3 are done as of 2026-09-12. Start at step 4.
+
+1. ~~Make the five decisions.~~ Three are settled. The two releases remain open.
+2. ~~Commit and verify the build fix.~~ The exclusion is committed in `pdomain-ops` and `pdomain-ocr-training`. Both pass their full gate and both build a clean archive.
+3. ~~Merge the three branches.~~ All three merged clean into their masters and were not pushed.
+4. **Build the release path for `pdomain-pgdp-measure`, then tag it.** Copy the two workflows and two release scripts from `pdomain-book-contracts` and change the repository name. This is the long pole on the page-kind chain, so start it first. Then release `pdomain-book-tools` carrying the page-kind field and bump the labeler's pin. Consider `pdomain-ops`, `pdomain-ui`, and `pdomain-ocr-training` in the same pass to clear the drift.
+5. **Run Claude, Codex, and Grok in parallel.** Claude takes page-kind Tasks 6 and 7 with the proposal-log guard once the releases land, then region-routes Task 5. Codex takes the release path in step 4, then Wave 0. Grok takes its four passes, which block nothing. No two of them hold the same repository.
 6. **Design Slice 4 before building it.** The recorded claim is that 43 to 67 percent of pages show high x-height spread. That figure reads either as precision or as recall, and the two say different things about whether the signal is usable. No evidence file records the calculation. Recompute it before anything depends on it.
 7. **Build Slice 4 before Slice 3.** Slice 4 would produce proposals with no surface to review them, and Slice 3 would build a surface with nothing to review. Build the engine first, drive it over the REST interface, and let the review surface follow once proposals are real. The owner settled this ordering on 2026-09-12; it is a decision, not a recommendation.
 
