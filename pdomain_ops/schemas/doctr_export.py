@@ -92,11 +92,21 @@ def read_manifest(export_root: Path) -> DoctrExportManifest | None:
     return manifest
 
 
-def _current_umask() -> int:
-    """Read the process umask without leaving it changed."""
+def _shared_file_mode() -> int:
+    """The mode a plain ``open()`` would produce here: 0666 minus the umask.
+
+    ``os.umask`` has no read-only form, so reading the umask means setting it
+    to zero and putting it back, and that is process-global. Calling this per
+    write would expose a zero umask to every other thread for those two
+    syscalls. Call it once at import instead, while the module is still
+    single-threaded, and reuse the result.
+    """
     value = os.umask(0)
     _ = os.umask(value)
-    return value
+    return 0o666 & ~value
+
+
+_FILE_MODE = _shared_file_mode()
 
 
 def write_manifest(export_root: Path, manifest: DoctrExportManifest) -> None:
@@ -117,7 +127,7 @@ def write_manifest(export_root: Path, manifest: DoctrExportManifest) -> None:
         # unreadable to any other uid — the host's restic backup included.
         # Start from 0666, never 0777: nothing written here is a program.
         tmp_path = Path(tmp_name)
-        tmp_path.chmod(0o666 & ~_current_umask())
+        tmp_path.chmod(_FILE_MODE)
         tmp_path.replace(dest)
     except Exception:
         with contextlib.suppress(OSError):

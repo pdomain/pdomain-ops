@@ -83,11 +83,21 @@ def _read_raw(json_path: Path) -> dict[str, Any]:
         return {"paths": {}}
 
 
-def _current_umask() -> int:
-    """Read the process umask without leaving it changed."""
+def _shared_file_mode() -> int:
+    """The mode a plain ``open()`` would produce here: 0666 minus the umask.
+
+    ``os.umask`` has no read-only form, so reading the umask means setting it
+    to zero and putting it back, and that is process-global. Calling this per
+    write would expose a zero umask to every other thread for those two
+    syscalls. Call it once at import instead, while the module is still
+    single-threaded, and reuse the result.
+    """
     value = os.umask(0)
     _ = os.umask(value)
-    return value
+    return 0o666 & ~value
+
+
+_FILE_MODE = _shared_file_mode()
 
 
 def _atomic_write(json_path: Path, data: dict[str, Any]) -> None:
@@ -105,7 +115,7 @@ def _atomic_write(json_path: Path, data: dict[str, Any]) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
         tmp_path = Path(tmp_name)
-        tmp_path.chmod(0o666 & ~_current_umask())
+        tmp_path.chmod(_FILE_MODE)
         tmp_path.replace(json_path)
     except Exception:
         with contextlib.suppress(OSError):
