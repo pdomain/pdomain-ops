@@ -83,13 +83,30 @@ def _read_raw(json_path: Path) -> dict[str, Any]:
         return {"paths": {}}
 
 
+def _current_umask() -> int:
+    """Read the process umask without leaving it changed."""
+    value = os.umask(0)
+    _ = os.umask(value)
+    return value
+
+
 def _atomic_write(json_path: Path, data: dict[str, Any]) -> None:
+    """Write *data* as JSON, publishing it at a mode other uids can read.
+
+    ``tempfile.mkstemp`` hardcodes 0600 and ignores the umask by design, and a
+    rename preserves that mode. Without the chmod, every file written here
+    lands at 0600 whatever the umask says, which hides it from any reader
+    running as a different uid — the host's restic backup included. Start from
+    0666, never 0777: nothing written here is a program.
+    """
     json_path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=json_path.parent, prefix=".shared-paths-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
-        Path(tmp_name).replace(json_path)
+        tmp_path = Path(tmp_name)
+        tmp_path.chmod(0o666 & ~_current_umask())
+        tmp_path.replace(json_path)
     except Exception:
         with contextlib.suppress(OSError):
             Path(tmp_name).unlink()

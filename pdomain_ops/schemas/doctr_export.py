@@ -92,6 +92,13 @@ def read_manifest(export_root: Path) -> DoctrExportManifest | None:
     return manifest
 
 
+def _current_umask() -> int:
+    """Read the process umask without leaving it changed."""
+    value = os.umask(0)
+    _ = os.umask(value)
+    return value
+
+
 def write_manifest(export_root: Path, manifest: DoctrExportManifest) -> None:
     """Write *manifest* to ``<export_root>/manifest.json`` atomically.
 
@@ -105,7 +112,13 @@ def write_manifest(export_root: Path, manifest: DoctrExportManifest) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(manifest.model_dump_json(by_alias=True, indent=2))
-        Path(tmp_name).replace(dest)
+        # mkstemp hardcodes 0600 and ignores the umask by design, and a rename
+        # preserves that mode, so without this chmod the published file is
+        # unreadable to any other uid — the host's restic backup included.
+        # Start from 0666, never 0777: nothing written here is a program.
+        tmp_path = Path(tmp_name)
+        tmp_path.chmod(0o666 & ~_current_umask())
+        tmp_path.replace(dest)
     except Exception:
         with contextlib.suppress(OSError):
             Path(tmp_name).unlink()
