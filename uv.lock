@@ -2471,40 +2471,40 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "eventsourcing", specifier = ">=9.4,<10" },
-    { name = "fastapi", specifier = ">=0.110" },
-    { name = "filelock", specifier = ">=3.13" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "httpx2", specifier = ">=2.5" },
+    { name = "eventsourcing", specifier = ">=9.5,<10" },
+    { name = "fastapi", specifier = ">=0.141" },
+    { name = "filelock", specifier = ">=3.32" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "httpx2", specifier = ">=2.12" },
     { name = "modal", marker = "extra == 'modal'", specifier = ">=0.66" },
-    { name = "packaging", specifier = ">=24" },
+    { name = "packaging", specifier = ">=26" },
     { name = "pdomain-book-contracts", specifier = ">=0.2.0", index = "https://pdomain.github.io/pdomain-index-pip/simple/" },
     { name = "pdomain-book-tools", specifier = ">=0.28.0", index = "https://pdomain.github.io/pdomain-index-pip/simple/" },
-    { name = "platformdirs", specifier = ">=4.2" },
-    { name = "pydantic", specifier = ">=2.5" },
+    { name = "platformdirs", specifier = ">=4.11" },
+    { name = "pydantic", specifier = ">=2.13" },
     { name = "pyqt6", marker = "sys_platform == 'linux' and extra == 'desktop'", specifier = ">=6.7" },
     { name = "pyqt6-webengine", marker = "sys_platform == 'linux' and extra == 'desktop'", specifier = ">=6.7" },
     { name = "pystray", marker = "extra == 'desktop'", specifier = ">=0.19" },
     { name = "pywebview", marker = "extra == 'desktop'", specifier = ">=5" },
     { name = "qtpy", marker = "sys_platform == 'linux' and extra == 'desktop'", specifier = ">=2" },
-    { name = "starlette", specifier = ">=1.0.0" },
-    { name = "tomli", specifier = ">=2.0" },
-    { name = "tomli-w", specifier = ">=1.0" },
-    { name = "uvicorn", specifier = ">=0.30" },
+    { name = "starlette", specifier = ">=1.6.0" },
+    { name = "tomli", specifier = ">=2.4" },
+    { name = "tomli-w", specifier = ">=1.2" },
+    { name = "uvicorn", specifier = ">=0.52" },
 ]
 provides-extras = ["desktop", "modal"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "basedpyright", specifier = ">=1.39.4" },
+    { name = "basedpyright", specifier = ">=1.40.1" },
     { name = "gitlint", specifier = ">=0.19.1" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "pre-commit", specifier = ">=4.2.0" },
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "pytest-cov", specifier = ">=6.2.1" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pre-commit", specifier = ">=4.6.2" },
+    { name = "pytest", specifier = ">=9.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "ruff", specifier = ">=0.15.13" },
+    { name = "ruff", specifier = ">=0.16.7" },
 ]
 
 [[package]]
