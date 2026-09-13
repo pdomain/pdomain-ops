@@ -91,3 +91,7 @@ section.
   — stale required status contexts block every PR to master, and dated
   dep-refresh branches accumulate with no cleanup; Bug, P1, area
   Cross-cutting.
+- [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+  — `_probe_cuda` guards only its import, so a saturated card turns
+  `/api/suite/device` into a 500 in every suite app; also records what cannot
+  be verified without a free GPU; Bug, P1, area `gpu`.
