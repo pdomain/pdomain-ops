@@ -2,7 +2,7 @@
 Status: draft
 Owner: CT
 Created: 2026-09-12
-Last verified: 2026-09-12
+Last verified: 2026-09-17
 Kind: plan
 ---
 
@@ -21,7 +21,7 @@ Kind: plan
 - **Kind:** plan
 - **Status:** draft
 - **Owner:** CT
-- **Last verified:** 2026-09-12
+- **Last verified:** 2026-09-17
 - **Read when:** deciding what to work on next anywhere in the workspace, allocating agent sessions, or asking why page-layout OCR has not moved.
 - **Search terms:** suite status, agent allocation, release debt, page layout OCR, region proposals, build failure, venv-container, Codex, Grok, Claude.
 
@@ -65,23 +65,21 @@ The suite build is not a bottleneck. Build times ran from one second to forty-fi
 
 ## Release debt is the real bottleneck
 
-Five shared packages have drifted well behind their last tag. Nothing downstream can consume what has not been released, so this debt turns directly into blocked tasks.
+**Three of the five packages this section named have since been released, and the block-role gap it called the concrete cost is closed.** Re-measured 2026-09-17:
 
-| package | last tag | commits since |
-| --- | --- | ---: |
-| `pdomain-ops` | v0.11.2 | 59 |
-| `pdomain-ui` | v0.11.0 | 55 |
-| `pdomain-ocr-training` | v0.2.3 | 50 |
-| `pdomain-book-tools` | v0.27.0 | 10 |
-| `pdomain-pgdp-measure` | none | never released |
+| package | last tag | commits since | change since 2026-09-12 |
+| --- | --- | ---: | --- |
+| `pdomain-ops` | v0.11.2 | 68 | worse, still unreleased |
+| `pdomain-ui` | v0.12.1 | 0 | released, debt cleared |
+| `pdomain-ocr-training` | v0.2.3 | 56 | worse, still unreleased |
+| `pdomain-book-tools` | v0.28.0 | 5 | released |
+| `pdomain-pgdp-measure` | v0.1.0 | 4 | first release cut |
 
-`pdomain-pgdp-measure` has no tag at all. It was extracted on 2026-09-07 and reproduces its pre-move baseline byte for byte. No repository in the workspace lists it as a dependency. It is a finished package with no consumers.
+`pdomain-book-tools` v0.28.0 carries all 34 block roles, and the labeler pins that version exactly, so every `RegionRole` value now constructs. The 14 roles this section said still failed every region route no longer fail. Verified against the installed package in the labeler's own environment.
 
-The book-tools gap has a concrete cost. The labeler pins `pdomain-book-tools` v0.27.0 exactly, so 14 of the 34 roles still fail every region route it serves.
+`pdomain-pgdp-measure` is released at v0.1.0 and the labeler now depends on it: `propose_page_kinds` classifies a whole book through `fit_book_templates` and `classify_pages`. It is no longer a finished package with no consumers.
 
-The block role vocabulary was widened from 20 roles to the full 34 on 2026-09-08, and the widened set now matches the released `RegionRole` enum exactly. That commit is on master and is not in v0.27.0.
-
-An older note describes this as unfinished code. It is finished code waiting on a release.
+**What remains is `pdomain-ops` at 68 unreleased commits and `pdomain-ocr-training` at 56.** Neither blocks the labeling track: the labeler requires `pdomain-ops>=0.11.2` and runs on the released version, and nothing on the critical path imports the training package. This is real debt and it is not the bottleneck it was.
 
 ## Page-layout OCR: the vocabulary shipped, and nothing generates a proposal
 
@@ -89,21 +87,17 @@ The labeling track has seven slices. Slice 1 shipped and released. Slice 2 is ne
 
 **Slice 1 shipped and released.** `pdomain-book-contracts` v0.2.0 carries a 34-value `RegionRole` enum and a 14-value `PageKind` enum. Both import without the imaging or machine-learning stack.
 
-**Slice 2's stores and seven of its eight routes shipped and merged.** The labeler has a region store, a proposal journal, a decision journal, a resolver, and an adapter that lifts marked blocks out of the page tree. The routes cover create, edit, delete, word membership, list proposals, accept, and reject. The canvas renders confirmed regions and above-threshold proposals, drawn so the two are visibly different.
+**Slice 2 is complete: all eight routes have now shipped.** Re-measured 2026-09-17. The labeler has a region store, a proposal journal, a decision journal, a resolver, and an adapter that lifts marked blocks out of the page tree. The routes cover create, edit, delete, word membership, list proposals, accept, reject, and the book-scoped propose route. The canvas renders confirmed regions and above-threshold proposals, drawn so the two are visibly different.
 
-**The eighth route did not ship.** The book-scoped propose route and the proposal-run job were skipped, because they import two modules the page-kind work had not yet built. The handoff states the consequence plainly: every proposal in the system today was written by a test. Nothing generates a proposal in production.
+**The eighth route shipped on 2026-09-17,** in `pdomain-ocr-labeler-spa` `cebe556`, with the suite green at 1640 passed and 4 skipped. It had been held back because it imports two page-kind modules that did not exist; those merged the same day. A `propose_regions` job now fills the region proposal journal in production. The statement this section used to carry, that every proposal in the system was written by a test, is no longer true.
 
-**Three branches carrying page-kind work have sat unmerged since 2026-09-09.** All three are built, reviewed, and gate-green. The integration question was put to the owner and not answered.
+**The three page-kind branches have all merged.** `feature/page-kind-field` in `pdomain-book-tools`, `feature/page-class-confidence` in `pdomain-pgdp-measure`, and `feature/page-kind-stores` in `pdomain-ocr-labeler-spa` are all ancestors of their repository's master as of 2026-09-17. A classifier now proposes every page's kind into a durable journal and a person confirms it onto the page.
 
-| repository | branch |
-| --- | --- |
-| `pdomain-book-tools` | `feature/page-kind-field` |
-| `pdomain-pgdp-measure` | `feature/page-class-confidence` |
-| `pdomain-ocr-labeler-spa` | `feature/page-kind-stores` |
+One branch in the labeler is still unmerged: `feature/edition-companion-contract`, two commits ahead of master. It is unrelated to the labeling track and nobody has stated what it is waiting on.
 
 **No region review surface exists.** The labeler frontend carries generated TypeScript types for the seven shipped routes and no client code that calls any of them. A person can see a region on the canvas and cannot draw, edit, accept, or reject one.
 
-**No geometry proposal engine exists.** This is the slice that turns measured typography into proposals, and therefore the slice that makes the labeler produce anything worth reviewing. The signals it needs are measured and on disk. Nothing reads them.
+**No geometry proposal engine exists, and it is now the single thing standing between the labeler and a usable corpus.** This is the slice that turns measured geometry into proposals. Its seam is built: `propose_regions` takes a swappable detector and defaults to one that proposes nothing. A design landed on 2026-09-17 in `pdomain-ocr-synth`'s `docs/specs/2026-09-17-geometry-region-proposals-design.md`, which found that the page-kind job already computes every signal the engine needs and discards it.
 
 **Nothing can train a layout model.** `pdomain-ocr-training` ships DocTR detection and recognition only. The layout registry in `pdomain-book-tools` offers three built-in detectors and accepts registered ones, but only its own tests register anything. The CLI accepts a layout checkpoint path, and nothing in the workspace produces a checkpoint. The workspace training and validation directories are empty.
 
