@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-05-19
-Last verified: 2026-07-13
+Last verified: 2026-11-06
 Kind: process
 ---
 
@@ -27,7 +27,14 @@ Retired docs are deleted after their durable behavior, rationale, and residual
 intent move into architecture, decisions, and context docs. The repo does not
 keep a parallel archive tree.
 
-Active work maps to governed reports in [`docs/issues/`](issues/README.md).
-Their `Resolution` fields and the issue index are authoritative. GitHub Issues
-is not a work-tracking source for this repository. [`DOCGRAPH.md`](../DOCGRAPH.md)
-defines the document lifecycle rules.
+Remaining work is the short list in
+[`docs/context/current-state.md`](context/current-state.md) and
+[`docs/issues/README.md`](issues/README.md).
+
+Open issue reports live under [`docs/issues/`](issues/README.md).
+
+Their `Resolution` fields and that index are authoritative.
+
+GitHub Issues is not a work-tracking source for this repository.
+
+[`DOCGRAPH.md`](../DOCGRAPH.md) defines the document lifecycle rules.

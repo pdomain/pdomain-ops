@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-08-08
+Last verified: 2026-11-06
 Kind: context
 ---
 
@@ -12,6 +12,7 @@ Kind: context
 
 - **Kind:** context
 - **Status:** active
+- **Last verified:** 2026-11-06
 - **Read when:** deciding what work remains active, deferred, rejected, or blocked.
 - **Search terms:** intent, deferred work, rejected direction, owner decision.
 
@@ -183,11 +184,20 @@ maintenance obligation under `CONVENTIONS.md`; it is not a migration bet.
   maintainers. Evidence: `/home/vscode/.codex` remains relevant, but the old
   volume, workspace, and scripts are obsolete. Source mapped:
   `_tbd/ocr-container-docs/runbooks/codex-devcontainer-persistence.md`.
+- **Close or keep the dep-refresh issue.** Commit `7ff9c7d` on 2026-09-13
+  deleted the GitHub workflows. On 2026-11-06 GitHub reports that master has
+  no branch protection. Thirteen `dep-refresh/*` branches are still on origin.
+  The issue's acceptance criteria were not implemented. The file stays.
+  [Weekly dep-refresh cannot auto-land in this repo](../issues/2026-08-08-dep-refresh-cannot-auto-land.md).
 
 ## Open issues
 
-- [`docs/issues/README.md`](../issues/README.md) is the canonical issue index.
-  It records no open reports.
+Both [current state](current-state.md) and [the issue index](../issues/README.md)
+list the open reports.
+
+- [Concurrent OCR jobs can each build a duplicate DocTR predictor](../issues/2026-08-08-predictor-cache-not-thread-safe.md)
+- [The device probe raises instead of reporting when the GPU is full](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+- [Weekly dep-refresh cannot auto-land in this repo](../issues/2026-08-08-dep-refresh-cannot-auto-land.md)
 
 ## Legacy-unverified sweep
 
