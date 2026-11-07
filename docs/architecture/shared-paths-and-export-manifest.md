@@ -2,7 +2,7 @@
 Status: built
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: architecture
 ---
 
@@ -24,7 +24,9 @@ partial JSON. The public suite package exports the path helper, the publish and
 resolve functions, and the lock-timeout exception.
 
 When publishers use the same key, the last writer wins. Resolving an absent key,
-missing registry, or corrupt registry returns `None`. Resolution returns a
+missing registry, invalid JSON, or a non-object JSON root returns `None`.
+The reader does not validate the full registry shape: a truthy non-object
+`paths` value can raise instead of returning `None`. Resolution returns a
 published path even when the target no longer exists. The consumer decides
 whether that stale path is usable. Lock timeout precedence is the explicit
 argument, then `PDOMAIN_SHARED_PATHS_LOCK_TIMEOUT`, then the five-second default.
@@ -68,4 +70,5 @@ from internal modules.
   `_tbd/ocr-container-docs/plans/2026-06-10-trainer-spa-next-arc.md`,
   `_tbd/ocr-container-docs/archive/plans/2026-05-16-pd-book-tools-review-metadata-and-schemas-emit.md`,
   `_tbd/ocr-container-docs/archive/plans/2026-05-17-pd-book-tools-pydantic-core-schemas.md`
-- **Verified:** 2026-07-13; the focused suite passed 44 tests.
+- **Verified:** 2026-11-07 by reading the code and focused tests above. Corrupt
+  JSON and non-object roots have tests; malformed nested `paths` values do not.

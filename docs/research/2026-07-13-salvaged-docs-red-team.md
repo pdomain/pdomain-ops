@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: research
 ---
 
@@ -12,15 +12,16 @@ Kind: research
 
 - **Kind:** research
 - **Status:** active
-- **Read when:** deciding whether to preserve, supersede, retire, or delete a
-  document under `_tbd/ocr-container-docs/`.
+- **Read when:** tracing the July 2026 review and retirement of the salvaged
+  `_tbd/ocr-container-docs/` corpus.
 - **Search terms:** salvaged docs, red-team, divergence, retirement,
   preservation routes, tbd review.
 
 ## Goal
 
-Test every salvaged Markdown document against current implementation and
-practice before taking any lifecycle action. The review identifies where the
+The July 2026 review tested every salvaged Markdown document against the
+implementation and practice then available before taking lifecycle action.
+The review identifies where the
 repository suite took a different direction. It also identifies useful material
 that must move to architecture, decisions, or intent before a source is retired.
 
@@ -39,6 +40,23 @@ verification was unavailable for the owning repository, external service, live
 GitHub state, or current tool.
 
 ## Evidence
+
+### Historical scope checked on 2026-11-07
+
+Commit `30b579b` removed 222 `_tbd/` files, including 210 Markdown sources.
+The 210 unique source paths in the table exactly match
+`git ls-tree -r --name-only 30b579b^ _tbd` filtered to Markdown. The status
+counts below and the 185 `yes` retirement recommendations were recounted.
+No `_tbd/` file is tracked at the current revision. The table preserves the
+July findings; its uses of "current" refer to that review, not November code.
+
+Preservation remains recorded in the architecture documents,
+[`decisions`](../context/decisions.md), and
+[`intent map`](../context/intent-map.md). The corpus-retirement entry in the
+decision log records the completed deletion. The original cross-repository
+and live-service assertions were not revalidated in this historical check.
+
+### July review ledger
 
 The ledger contains 210 unique source paths. Recommendations total `abandoned`
 12, `active` 2, `draft` 4, `implemented` 69, `partial` 8, `retired` 22, `stale`
@@ -280,6 +298,10 @@ Explicitly label anything that did not ship or no longer matches current
 practice.
 
 ## Next steps
+
+The preservation and source-deletion steps below describe the original July
+sequence. Commit `30b579b` completed the corpus deletion. Remaining blocked
+and owner-decision work is tracked in the intent map linked above.
 
 1. Review uncertain and non-retirement rows with the owner and the owning
    repositories.

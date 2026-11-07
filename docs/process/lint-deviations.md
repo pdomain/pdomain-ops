@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-05-22
-Last verified: 2026-08-08
+Last verified: 2026-11-07
 Kind: process
 ---
 
@@ -29,7 +29,8 @@ and CI environment does not install, so basedpyright cannot resolve them:
 
 - `pdomain_ops/desktop.py`: `webview` and `pystray` support the optional GUI and
   tray paths.
-- `pdomain_ops/gpu/device.py`: `cupy` supports the optional `[gpu]` probe.
+- `pdomain_ops/gpu/device.py`: `cupy` supports optional CUDA detection when
+  installed separately. This package does not declare a `[gpu]` extra.
 - `pdomain_ops/gpu/modal_app.py`: `modal` supports the optional `[modal]`
   deployment entry point.
 - `pdomain_ops/gpu/modal_dispatcher.py`: `modal` supports remote dispatch when
@@ -51,16 +52,14 @@ environment, so `reportMissingImports` does not fire and the strict
   and `legacy` device returns. Both values pass `_VALID_DEVICES` checks before
   return, but basedpyright does not preserve the literal narrowing.
 
-### Partially-typed first-party boundary and shared cache
+### Shared cache
 
-- `pdomain_ops/gpu/default_stages.py` and `pdomain_ops/gpu/local_stage.py`
-  suppress `reportUnknownVariableType` on the
-  `get_finetuned_torch_doctr_predictor` import. The `pdomain-book-tools`
-  function is only partially annotated at that boundary, so strict mode reports
-  its inferred type as unknown.
 - `pdomain_ops/gpu/local_stage.py` suppresses `reportPrivateUsage` on its import
   of `_predictor_cache` from `pdomain_ops/gpu/default_stages.py`. The cache is a
   deliberate GPU-package-internal share between the local and default stages.
+
+The `get_finetuned_torch_doctr_predictor` imports in `default_stages.py` and
+`local_stage.py` no longer suppress `reportUnknownVariableType`.
 
 Optional untyped modules (`webview`, `pystray`, `cupy`, and `modal`) are bound
 to an `Any`-typed local at the import boundary instead of being suppressed, so
@@ -113,8 +112,6 @@ the tests.
 
 - `pdomain_ops/gpu/device_probe.py` suppresses `S603` for argument vectors that
   start with resolved, trusted `nvidia-smi` and `lspci` executables.
-- `scripts/update_github_actions.py` suppresses `S603` for an argument vector
-  that starts with the resolved, trusted `gh` executable.
 - `pdomain_ops/desktop.py` suppresses `S606` because restart must replace the
   current process with `os.execv`.
 
@@ -200,10 +197,10 @@ handler as "not accessed", but the decorator registration is the real use, so
 the rule is a systematic false positive here. The disable is package-wide rather
 than per-handler because per-site ignores would recur on every new route and
 drift out of sync. The trade-off: it also silences any genuine module-level dead
-function. No such function is known in the package today; the last one,
-`pdomain_ops/desktop.py::_noop_app`, was removed in commit `d73c331` on
-2026-08-07. File any new case as a governed issue rather than leaving it
-silently hidden.
+function. The previously identified `pdomain_ops/desktop.py::_noop_app` was
+removed in commit `d73c331` on 2026-08-07 and remains absent. This catalog
+check does not establish that no other unused function exists. File any new
+case as a governed issue rather than leaving it silently hidden.
 
 ### No basedpyright baseline
 
@@ -246,3 +243,15 @@ file. Earlier artifacts appeared in
 `tests/suite/test_register_self.py`, and `tests/gpu/test_modal_dispatcher.py`.
 They either suppressed no basedpyright diagnostic or were replaced by fixes to
 the underlying type issue.
+
+## Verification evidence
+
+On 2026-11-07, the inline catalog was checked with
+`rg -n 'pyright: ignore|type: ignore|noqa' pdomain_ops tests scripts`.
+Config-level entries were compared with `pyproject.toml`, `Makefile`, and
+`.pre-commit-config.yaml`. No baseline file is tracked. Commit `03acbc0`
+deleted `scripts/update_github_actions.py` and its tests; its suppression is
+therefore no longer part of this catalog. This inspection verifies the
+inventory and gate configuration; it does not substitute for running the gates.
+The same day's `make ci` passed with zero basedpyright errors or warnings and
+464 tests passed, one skipped because Modal is absent.

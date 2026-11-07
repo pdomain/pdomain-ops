@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-08-08
+Last verified: 2026-11-07
 Kind: context
 ---
 
@@ -14,6 +14,9 @@ Kind: context
 - **Status:** active
 - **Read when:** checking durable documentation and lifecycle decisions.
 - **Search terms:** decisions, retired plan, archive policy, tombstone.
+
+Entries retain their original evidence and dates. The revalidation entry at
+the end distinguishes current repository evidence from historical claims.
 
 ### 2026-07-13 — Retire completed implementation plans
 
@@ -543,3 +546,36 @@ Kind: context
 - **Remaining work:** two cleanup items from its Task 2.3 are still open and
   moved to the intent map: vestigial `wip/ship-issue*` remote branches, and
   vestigial `bot:*`, `model:*`, `model-effort:*`, and `recurring:*` labels.
+
+### 2026-11-07 — Revalidate the decision log against repository evidence
+
+- **Scope:** This check preserves the original decisions and their historical
+  evidence. It does not recheck every sibling repository, external service,
+  GitHub label, or past test count.
+- **Verified:** `pyproject.toml`, `Makefile`, and `.pre-commit-config.yaml`
+  still enforce package-scoped strict basedpyright with error-only failure,
+  `reportUnusedFunction = false`, and no tracked baseline. `make ci` passed
+  with zero basedpyright errors or warnings and 464 tests passed, one skipped
+  because Modal is absent. This confirms the current gate; it does not prove
+  the absence of every unused function.
+- **Historical corrections:** The July 13 lint entry's recommended-mode claim
+  was superseded by the July 15 strict-mode decision. The July 15 entry's
+  claim of 1,916 test errors within 1,897 total errors is inconsistent; those
+  historical counts are not current evidence. The July 21 issue-tracking
+  decision was superseded in part by the August 8 rule to index only open
+  reports and delete resolved reports after preservation. Its GitHub-label
+  assumptions are historical, not current tracking instructions.
+- **Release evidence:** Commit `7ff9c7d` deleted this repository's GitHub
+  workflows. The July 13 release entry's `.github/workflows/release.yml`
+  reference is historical. Current local release sequencing is implemented in
+  `scripts/do-release.sh` and `scripts/release-common.sh`; this check did not
+  publish a release or verify remote index publication.
+- **Corpus evidence:** Commit `30b579b` removed 222 `_tbd/` files, including
+  the exact 210 Markdown paths preserved by the research ledger. This
+  completes the earlier exclusion and preservation sequence. The original
+  removal-commit placeholder resolves to `30b579b`. Remaining external-state
+  questions stay in [`intent-map.md`](intent-map.md).
+- **Related evidence:** The current suppression inventory is in
+  [`lint-deviations.md`](../process/lint-deviations.md). The historical ledger
+  records its November verification scope without refreshing July claims
+  about sibling implementations.

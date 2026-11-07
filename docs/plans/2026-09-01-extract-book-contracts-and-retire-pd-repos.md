@@ -2,7 +2,7 @@
 Status: draft
 Owner: CT
 Created: 2026-09-01
-Last verified: 2026-09-02
+Last verified: 2026-11-07
 Kind: plan
 ---
 
@@ -25,16 +25,53 @@ This plan does not authorize implementation. Begin each task only after explicit
 - **Kind:** plan
 - **Status:** draft
 - **Owner:** CT
-- **Last verified:** 2026-09-02
+- **Last verified:** 2026-11-07
 - **Read when:** extracting shared contracts, retiring the pd- repositories, or changing what depends on `pdomain-book-tools`.
 - **Search terms:** book contracts, package extraction, pd-ocr-labeler retirement, import weight, canonical json bytes.
+
+## Verification — 2026-11-07
+
+The package move and the checked consumer repoints exist. The remaining
+work is proving the historical data rescue and repository retirement, then
+reconciling the unchecked steps with evidence. Do not restart extraction
+from the September checklist or treat its publication blocker as current.
+
+Checked the sibling source trees under `/mnt/work/projects/pdomain/`:
+
+- `pdomain-book-contracts` at `37fa7ec` has the geometry, text, typography,
+  matching, OCR, layout and PGDP modules, plus the later annotation package.
+  Its package, import-boundary, and bounding-box provider tests pass: thirteen
+  tests in `tests/test_package.py`, `tests/test_torch_free_import.py`, and
+  `tests/test_bounding_box_image_ops.py`.
+- `pdomain-book-tools` at `5194dfe` re-exports the moved modules, uses a lazy
+  root `__getattr__`, and declares contracts through the private index rather
+  than an editable path in `pyproject.toml`.
+- `pdomain-source-data` at `1deeeae` delegates `hashing.canonical_json_bytes`
+  to the shared implementation. `tests/test_hashing.py` checks byte-for-byte
+  agreement with book-tools. This does not verify the original stored-data
+  digest inventory or prove that every affected artifact was rebuilt.
+- `pdomain-pgdp-api-client` at `dad7631` imports `PGDPExport` directly from
+  contracts in `tests/test_booktools_compat.py`; its compatibility test passes.
+  The absolute-path loader described by Task 1 is gone.
+- Source-data and the labeler both pin `pdomain-book-tools==0.30.1` and both
+  declare `pdomain-book-contracts>=0.2.0` with their private-index source pins.
+  This confirms the paired versions in source configuration, not a replay of
+  every consumer's release or dynamic-import gate.
+- The current workspace contains `ml-training/` and `ml-validation/` and no
+  `pd-ocr-trainer` or `pd-ocr-labeler` directory. Directory names alone do not
+  prove Task 2's content-hash verification, provenance manifest, or retirement
+  notices. Those outcomes remain unverified.
+
+The 2026-09-02 handoff and all measured counts and environment paths below
+are historical. The original task checkboxes remain as execution history;
+this pass has not marked a whole task complete from partial evidence.
 
 ## Goal
 
 Make the shared contracts usable without an imaging stack, and remove the two
 repositories that fork or duplicate them.
 
-Today a consumer that wants one pure-Python class pays for cv2, numpy and
+At the original 2026-09-01 survey, a consumer wanting one pure-Python class paid for cv2, numpy and
 shapely. One repository works around that by loading a source file from an
 absolute path. Another forked the whole package and froze. A third rewrote the
 parser rather than depend on it. Each is a symptom of the same cause.

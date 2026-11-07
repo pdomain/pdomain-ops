@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-15
-Last verified: 2026-11-06
+Last verified: 2026-11-07
 Kind: process
 Level: I1
 ---
@@ -14,7 +14,7 @@ Level: I1
 - **Kind:** process
 - **Status:** active
 - **Level:** I1
-- **Last verified:** 2026-11-06
+- **Last verified:** 2026-11-07
 - **Read when:** filing a bug / defect / investigation report, or looking up an
   open issue's status, evidence, or resolution.
 - **Search terms:** issues folder, bug report, defect report, issue template,
@@ -23,12 +23,13 @@ Level: I1
 ## Remaining work
 
 - The predictor cache is still an unguarded check-then-set. [Concurrent OCR jobs can each build a duplicate DocTR predictor](2026-08-08-predictor-cache-not-thread-safe.md)
-- The CUDA probe still raises when the card is out of memory. It still marks every device it finds as available. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+- The CUDA probe still lets memory-query failures escape and marks queried CUDA devices available regardless of free memory. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
 - Weekly dep-refresh auto-land is still open. Commit `7ff9c7d` removed the GitHub workflows. Branch protection on master is off. Thirteen `dep-refresh/*` branches remain on origin. Closing the issue needs an owner decision. [Weekly dep-refresh cannot auto-land in this repo](2026-08-08-dep-refresh-cannot-auto-land.md)
-- Book-contracts extraction is still open. The 2026-09-02 handoff says Tasks 1, 3, and 4 are done. Those plan checkboxes are still empty. Task 2's three steps are unchecked. In Task 5, Step 2 is checked and Steps 0, 1, 3, and 4 are open. Step 1's prose says the api-client repoint was done on 2026-09-02. The handoff says the package is unpublished. `pdomain-book-contracts` v0.2.0 exists. [Extract Book Contracts and Retire the pd- Repos](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md). [Handoff](../handoff/2026-09-02-045132-book-contracts-extraction.md)
-- The suite allocation plan stays in place as an active cross-repo work order. In this repo, `v0.12.0` is current master, so the plan's count of 68 unreleased commits is out of date. [Suite status and where to spend agent time](../plans/2026-09-12-suite-status-and-agent-allocation.md)
+- Book-contracts extraction still needs evidence for data rescue, digest compatibility of stored artifacts, and repository retirement. The package move and checked consumer repoints exist. [Extract Book Contracts and Retire the pd- Repos](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md)
+- The suite work order still needs proof of production proposal wiring, accepted corpus quality, and a usable model and checkpoint. Region review, geometry detectors, and layout training interfaces now exist. [Suite status and where to spend agent time](../plans/2026-09-12-suite-status-and-agent-allocation.md)
 
-These items were checked against this repository on 2026-11-06.
+These items were checked against repository source and focused sibling evidence
+on 2026-11-07. The linked plans record the scope and outcomes still unverified.
 
 The same list is in [current state](../context/current-state.md).
 

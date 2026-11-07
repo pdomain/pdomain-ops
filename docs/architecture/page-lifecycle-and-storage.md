@@ -2,7 +2,7 @@
 Status: built
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: architecture
 ---
 
@@ -69,4 +69,6 @@ objects; it is not a distributed service.
   `_tbd/ocr-container-docs/specs/2026-05-31-page-record-ops-design.md`,
   `_tbd/ocr-container-docs/specs/2026-06-01-page-server-extensible-distributed.md`,
   `_tbd/ocr-container-docs/archive/plans/2026-06-01-page-record-ops-pdomain-ops.md`
-- **Verified:** 2026-07-13 against the current code and focused tests above.
+- **Verified:** 2026-11-07 by reading the current code and focused tests above,
+  including SQLite restart, snapshot replay, extension isolation, shard routing,
+  and the remote-store stub checks.

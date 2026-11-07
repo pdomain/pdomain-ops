@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-08-08
-Last verified: 2026-08-08
+Last verified: 2026-11-07
 Kind: issue
 Level: I1
 ---
@@ -14,7 +14,7 @@ Level: I1
 - **Kind:** issue
 - **Status:** active
 - **Level:** I1
-- **Last verified:** 2026-08-08
+- **Last verified:** 2026-11-07
 - **Resolution:** Open
 - **Issue type:** Bug
 - **Priority:** P1
@@ -36,16 +36,32 @@ Level: I1
 
 ## Summary
 
-The weekly `dep-refresh` workflow runs correctly and produces correct
-dependency updates, but two independent defects stop any pull request to
-`master` — dep-refresh or otherwise — from landing itself, and they compound.
-Master branch protection requires three status contexts that this repo's CI
-no longer produces (a naming leftover from the `pd-ocr-ops` → `pdomain-ops`
-rename), so every PR sits with required checks stuck "expected" forever.
-Separately, `dep-refresh` creates a fresh dated branch each run with no
-cleanup, so failed weeks accumulate as stray branches and open PRs. The
-sibling repo `pdomain-ui` diagnosed the same shape of failure and designed a
-fix; this report adapts that design to what is actually broken here.
+The original auto-land defects describe the 2026-08-08 workflow, which no
+longer exists. Commit `7ff9c7d` deleted `.github/workflows/` on 2026-09-13.
+A 2026-11-07 GitHub API check reports master as unprotected, thirteen
+`dep-refresh/*` branches, nine open dep-refresh PRs, and
+`delete_branch_on_merge=false`. The automation acceptance criteria below
+were not implemented; removing the workflow did not deliver auto-land.
+
+The issue needs an owner decision: close it as an abandoned automation path,
+or approve a new design consistent with local release practice. Do not
+recreate the deleted workflows by following the historical next steps.
+
+## Verification — 2026-11-07
+
+Checked repository source at `9234e21` and live read-only GitHub API state:
+
+- `git show 7ff9c7d` records the workflow removal. No workflow directory exists.
+- `gh api repos/pdomain/pdomain-ops/branches/master/protection` returns
+  HTTP 404, `Branch not protected`.
+- The paginated branches endpoint lists thirteen `dep-refresh/` branches.
+- `gh pr list --repo pdomain/pdomain-ops --state open` lists PRs 85 through
+  93, all on dep-refresh branches.
+- The repository endpoint still returns `delete_branch_on_merge=false`.
+
+The acceptance criteria, command output, root-cause analysis, and rollout
+below are retained as the original 2026-08-08 investigation, not current
+configuration or authorization to change GitHub settings.
 
 ## Outcome / acceptance criteria
 
@@ -145,6 +161,9 @@ until a refresh lands clean.)
   Next steps for the order the fix must land in.
 
 ## Next steps
+
+First obtain the owner decision described in Summary. The following rollout
+is historical and applies only if a new automation design is approved.
 
 1. Follow the design at
    `pdomain-ui:docs/specs/2026-07-16-dep-refresh-auto-land-design.md`,

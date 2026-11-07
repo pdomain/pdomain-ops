@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-11-06
+Last verified: 2026-11-07
 Kind: context
 ---
 
@@ -12,13 +12,17 @@ Kind: context
 
 - **Kind:** context
 - **Status:** active
-- **Last verified:** 2026-11-06
+- **Last verified:** 2026-11-07
 - **Read when:** deciding what work remains active, deferred, rejected, or blocked.
 - **Search terms:** intent, deferred work, rejected direction, owner decision.
 
 Current work stays limited to isolated ebook sessions and evidence-backed
 page-model adoption. All other items are completed, deferred, rejected,
 blocked, or need an owner decision.
+
+The 2026-11-07 verification checked local source, tests, and the open-work
+links. External infrastructure and historical cross-repository decisions below
+remain scoped to their recorded evidence; this date does not revalidate them.
 
 ## Active bets
 

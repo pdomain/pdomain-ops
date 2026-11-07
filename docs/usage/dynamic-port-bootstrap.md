@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-05-31
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: usage
 ---
 
@@ -54,10 +54,15 @@ def main() -> None:
 port free. It always closes the probe socket before returning, and uvicorn
 then binds the port for real.
 
-A TOCTOU race is possible if another process claims the port between the
-probe and uvicorn's bind. This race is extremely unlikely in practice. If it
-occurs, uvicorn immediately raises `EADDRINUSE`. Calling
-`find_available_port` again resolves the collision.
+Another process can claim the port between the probe and uvicorn's bind.
+The helper does not reserve the port or retry server startup. If the bind
+fails, the caller must probe again, update the registry, and retry startup.
+A second probe still cannot reserve the port.
+
+`bootstrap_spa(preferred=..., caller_package=...)` combines port selection,
+best-effort registration, and startup URL output. It returns the selected
+port for the caller to bind. It logs registration failures and continues;
+direct `register_self` calls in the snippet above propagate those failures.
 
 ## Notes for stage-2 SPA consumers
 
@@ -73,3 +78,14 @@ When adopting this pattern in `pdomain-ocr-simple-gui`,
    (e.g. `"pdomain_ocr_simple_gui"`), not the distribution name.
 5. If the app already calls `register_self` without `actual_port`, add the
    parameter. The default (`None`) is backward-compatible.
+
+## Evidence
+
+- **Code:** `pdomain_ops/suite/ports.py`,
+  `pdomain_ops/suite/register_self.py`, `pdomain_ops/suite/bootstrap.py`,
+  `pdomain_ops/suite/__init__.py`.
+- **Tests:** `tests/suite/test_ports.py`,
+  `tests/suite/test_register_self.py`, `tests/suite/test_bootstrap.py`.
+- **Verified:** 2026-11-07 by reading the helper implementations and tests for
+  occupied ports, exhausted attempts, registry port overrides, and nonfatal
+  registration failures. This does not establish adoption in every sibling SPA.

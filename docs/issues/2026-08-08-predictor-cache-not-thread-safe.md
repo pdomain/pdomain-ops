@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-08-08
-Last verified: 2026-08-08
+Last verified: 2026-11-07
 Kind: issue
 Level: I2
 ---
@@ -14,7 +14,7 @@ Level: I2
 - **Kind:** issue
 - **Status:** active
 - **Level:** I2
-- **Last verified:** 2026-08-08
+- **Last verified:** 2026-11-07
 - **Resolution:** Open
 - **Issue type:** Bug
 - **Priority:** P2
@@ -38,11 +38,22 @@ Level: I2
 `_predictor_cache` is a plain module-level `dict` read and written from more
 than one thread with no lock. Both call sites use a non-atomic
 check-then-build-then-set sequence, so two threads that miss on the same key
-both build a DocTR predictor and the second write discards the first. On CUDA
-that leaves an extra predictor resident in VRAM with no reference to free it,
-which works against the OOM backoff this code exists to support. Found while
-closing out `pdomain-ocr-simple-gui`'s deferred follow-ups, where the leaked
-executor thread is already noted as a known limitation.
+both build a DocTR predictor and the second write discards the first. On CUDA,
+this can increase peak memory while both predictors are in use. This inspection
+does not establish a permanent VRAM leak after references are released. The
+issue was found while closing out `pdomain-ocr-simple-gui`'s deferred
+follow-ups, where the leaked executor thread is already noted as a known
+limitation.
+
+## Verification — 2026-11-07
+
+The race remains in `pdomain_ops/gpu/default_stages.py:218-221` and
+`pdomain_ops/gpu/local_stage.py:163-171` at `9234e21`. The shared dictionary
+has no lock, and `build_smaller` still reaches it through the executor.
+`tests/gpu/test_default_stages.py` covers sequential reuse and distinct keys;
+it does not prove single construction under concurrent cold-key access.
+No real CUDA race or persistent allocation leak was reproduced in this pass.
+The issue remains open.
 
 ## Outcome / acceptance criteria
 
@@ -166,7 +177,7 @@ Reachable on any device; consequences are worst on CUDA.
   working `build_smaller`; the race is in the callback's cache access, not in
   the backoff.
 - **Correctness of OCR output.** A duplicate predictor produces the same
-  results. The cost is wasted build time and resident memory, not wrong text.
+  results. The demonstrated risk is duplicate build time and higher peak memory, not wrong text.
 
 ## Resolution
 

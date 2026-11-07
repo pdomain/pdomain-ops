@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-09-13
-Last verified: 2026-09-13
+Last verified: 2026-11-07
 Kind: issue
 ---
 
@@ -13,8 +13,8 @@ Kind: issue
 - **Kind:** issue
 - **Status:** active
 - **Owner:** CT
-- **Last verified:** 2026-09-13
-- **Severity:** High. Every suite application serves a 500 from its device route on a busy GPU.
+- **Last verified:** 2026-11-07
+- **Severity:** High. Mounted local device routes return a 500 when the CUDA probe raises during memory queries.
 - **Read when:** a test fails with a CUDA out-of-memory error, the device route returns 500, or you are deciding what can be verified without a free GPU.
 - **Search terms:** CUDA out of memory, AcceleratorError, device probe, mem_get_info, suite device route, GPU saturated, vram_free_mb.
 
@@ -25,6 +25,17 @@ Kind: issue
 Asking which devices exist should never fail because one of them is busy. The probe should report the device as unavailable and say why.
 
 There is a second, smaller problem in the same function. It sets `available=True` for every device it finds, without consulting the free memory it just measured. A card with no free memory is reported as available.
+
+## Verification — 2026-11-07
+
+The defect remains at `9234e21`: `_probe_cuda` in
+`pdomain_ops/gpu/device_probe.py:33-53` still catches only the import error,
+calls `mem_get_info` without an exception guard, and sets `available=True`.
+`tests/gpu/test_device_probe.py` replaces `_probe_cuda` in probe tests; it
+does not simulate a raising `mem_get_info`. This is a source and test review,
+not a fresh saturated-GPU reproduction. The hardware measurements and suite
+test totals below are the 2026-09-13 observations. They do not describe the
+current host or establish that every current sibling gate passes.
 
 ## Evidence / motivation
 
@@ -61,9 +72,9 @@ This is the honest list of work that needs a free GPU, so it is not mistaken for
 - `make e2e-real-ocr` in `pdomain-ocr-simple-gui`.
 - Any DocTR training or evaluation run in `pdomain-ocr-training`.
 
-**Not blocked, despite involving GPU code.** The `tests/gpu/` tree in this repository guards on availability and runs without a card, as does everything in `pdomain-book-tools` covered by `GPU_TESTING.md`. The ordinary `make ci` in every repository passes on a saturated card, with the single exception of the three tests named above.
+**Not blocked, despite involving GPU code.** The `tests/gpu/` tree in this repository guards on availability and runs without a card, as does everything in `pdomain-book-tools` covered by `GPU_TESTING.md`. The 2026-09-13 investigation reported ordinary `make ci` passing in the repositories it checked, except for the three tests named above. That suite-wide result was not rerun on 2026-11-07.
 
-**Not GPU work at all.** Nothing on the page-layout OCR critical path needs a local GPU right now. Region proposals, the review surface, and the geometry engine are all processor work. Training a layout model does need one, and the existing plan already puts that on rented cloud hardware rather than this machine, whose card is an 8 GB laptop part.
+**Not GPU work at all.** Nothing on the page-layout OCR critical path needs a local GPU right now. Region proposals, the review surface, and the geometry engine are all processor work. Training a layout model does need one, and the existing plan already puts that on rented cloud hardware rather than the 8 GB laptop GPU described by the original investigation.
 
 ## Outcome / acceptance criteria
 

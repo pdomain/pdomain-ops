@@ -2,7 +2,7 @@
 Status: draft
 Owner: CT
 Created: 2026-09-12
-Last verified: 2026-09-17
+Last verified: 2026-11-07
 Kind: plan
 ---
 
@@ -21,9 +21,46 @@ Kind: plan
 - **Kind:** plan
 - **Status:** draft
 - **Owner:** CT
-- **Last verified:** 2026-09-17
+- **Last verified:** 2026-11-07
 - **Read when:** deciding what to work on next anywhere in the workspace, allocating agent sessions, or asking why page-layout OCR has not moved.
 - **Search terms:** suite status, agent allocation, release debt, page layout OCR, region proposals, build failure, venv-container, Codex, Grok, Claude.
+
+## Verification — 2026-11-07
+
+This remains a cross-repository work order, but the September allocations
+and counts below are a historical survey. Use each repository's governed
+issue index before assigning work; this pass did not rerun all seventeen
+gates or recount their backlogs.
+
+The following checked source changes supersede specific September claims:
+
+- `pdomain-ops` v0.12.0 points at `02b201a`; this checkout is one documentation
+  commit later, at `9234e21`. The old figure of 68 unreleased commits is false.
+- Local release tags include book-tools v0.30.1, training v0.3.0, and
+  pgdp-measure v0.1.0. Source-data and the labeler both pin book-tools 0.30.1.
+  The old instructions to make the first measure release and restore missing
+  role vocabulary are not current blockers. Tags and dependency declarations
+  do not establish deployed runtime versions.
+- The labeler now has region review client code in
+  `frontend/src/components/right-panel/RegionDetail.tsx` and
+  `frontend/src/hooks/useRegionMutations.ts`, with corresponding tests. The
+  claim that no client calls the region routes is no longer true.
+- Geometry proposal implementations exist in the labeler's
+  `core/regions/furniture.py`, `poetry.py`, and `detector.py`, with tests under
+  `tests/unit/core/regions/`. The proposal handler still falls back to
+  `null_region_detector` when its context supplies no detector. This source
+  check proves implementations exist, not that every deployed app wires one.
+- Training now has `pdomain_ocr_training/layout.py` and `layout_regions.py`
+  with `tests/test_layout_regions.py`. Its runner reads region exports and
+  delegates training and saving to a supplied model; it rejects a missing
+  model. The old claim that nothing can train layout is too broad. This does
+  not prove a production model, real checkpoint, or sufficient accepted corpus.
+
+What remains to establish for this cross-repo work order is production
+proposal wiring, accepted corpus size and quality, and a usable model and
+checkpoint. Recheck each product's current issue index before reviving any
+September task, test count, branch claim, or agent allocation. No cross-repo
+plan was retired or execution checkbox changed in this verification pass.
 
 ## Goal
 
@@ -49,6 +86,9 @@ Python 3.11 through 3.13 with uv, hatchling, pytest, Ruff, and basedpyright. Rea
 - Two agents must not hold the same repository in the same cycle.
 
 ## Every repository builds, after two fixes
+
+This and the remaining sections preserve the September survey. Current
+corrections and verification limits are listed above.
 
 A build of all seventeen repositories ran on 2026-09-12. Fifteen have a build target; `pdomain-fonts` and `pdomain-pgdp-api-client` do not. Thirteen built on the first attempt. Two failed for the same reason, and both now build.
 

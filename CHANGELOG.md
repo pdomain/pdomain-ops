@@ -2,13 +2,18 @@
 Status: active
 Owner: CT
 Created: 2026-05-19
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: changelog
 ---
 
 # Changelog
 
 ## [Unreleased]
+
+No unreleased runtime changes are recorded here. This changelog is selective;
+Git tags and history cover releases without a section below.
+
+## [0.11.1] - 2026-07-14
 
 ### Fixed
 
@@ -30,6 +35,11 @@ Kind: changelog
   `device_resolver()` output, then falls back to `pick_device()` -- the same
   precedence `run_stage` uses. Previously a batch request with no `device`
   ignored `device_resolver` entirely and always auto-detected.
+
+## [0.10.0] - 2026-06-10
+
+### Fixed
+
 - `LocalFilePrefs` no longer blocks indefinitely on a contended prefs file
   lock. It now acquires `filelock.FileLock` with a finite timeout (default 5s)
   instead of `timeout=-1` (block forever). An orphaned lock holder, such as a
@@ -42,12 +52,18 @@ Kind: changelog
   change is backward compatible: the `PrefsAdapter` Protocol is unchanged, and
   existing callers catching `filelock.Timeout` still work.
 
+## [0.8.4] - 2026-06-05
+
 ### Changed
 
 - The `[desktop]` extra now bundles the QT backend on Linux (`qtpy>=2`,
   `PyQt6>=6.7`, `PyQt6-WebEngine>=6.7`). pywebview requires a GUI backend. QT
-  is the only fully pip-installable, self-contained choice for isolated
-  `uv tool` venvs.
+  supplies a pip-installable backend for isolated `uv tool` venvs.
+
+## [0.7.2] - 2026-06-01
+
+### Changed
+
 - Bump `pdomain-book-tools` floor to `>=0.18.0`. The batch OCR method
   `Document.from_images_ocr_via_doctr` now defaults to `auto_rotate=True`, so
   rotated pages are corrected automatically without any change in ops call-sites.
@@ -208,3 +224,14 @@ Kind: changelog
 - `register_default_stages()` for DocTR and Tesseract OCR
 - Suite plumbing: `mount_routes()`, `register_self()`, `prefs`, `sibling_spawn`, `desktop`
 - `schemas.emit` for JSON Schema generation
+
+## Verification evidence
+
+On 2026-11-07, `git tag --contains <commit> --sort=version:refname` identified
+the first release containing each entry formerly listed as unreleased:
+`4f94df5` and `af0cead` in `v0.11.1`, `e5f1063` in `v0.10.0`, `53714d6` in
+`v0.8.4`, and `5eb341b` in `v0.7.2`. Release dates above come from the tagged
+commits. The current device helpers, dispatcher precedence, prefs timeout,
+desktop dependency declarations, and auto-rotation regression test still
+support those entries. Current dependency floors are in `pyproject.toml`;
+historical version sections describe their release, not today's minimums.

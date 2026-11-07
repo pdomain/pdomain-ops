@@ -2,21 +2,22 @@
 Status: draft
 Owner: CT
 Created: 2026-09-02
-Last verified: 2026-09-02
+Last verified: 2026-11-07
 Kind: spec
 ---
 
 # Book Contracts Module Layout
 
-The new package groups its 12,998 lines by what each module is responsible for,
-not by which package it happened to live in before.
+The extraction design grouped the package by each module's responsibility. It
+measured 12,998 lines at the time, rather than grouping code by the package
+that had previously held it.
 
 ## Agent Index
 
 - **Kind:** spec
 - **Status:** draft
 - **Owner:** CT
-- **Last verified:** 2026-09-02
+- **Last verified:** 2026-11-07
 - **Read when:** performing the reorganisation commits of the book-contracts extraction, or deciding where a new contract belongs.
 - **Search terms:** book contracts layout, module structure, package reorganisation, extraction target.
 
@@ -33,6 +34,7 @@ up with the same accidental shape it has today.
 
 ```text
 pdomain_book_contracts/
+    annotation/      provenance.py, roles.py, page_kind.py, mappings.py
     geometry/        point.py, bounding_box.py
     text/            label_normalization.py, text_normalize.py
     typography/      labels.py, spans.py, normalization.py, records.py,
@@ -105,26 +107,30 @@ things in different packages, and the package prefix distinguishes them.
 
 ## Dependency direction
 
-Imports flow one way, top to bottom:
+Current cross-package imports, checked on 2026-11-07 in
+`pdomain-book-contracts` at `37fa7ec`, are:
 
 ```text
-geometry, text, _schemas     no internal dependencies
-layout, licensing            no internal dependencies
-typography                   depends on geometry, _schemas
-ocr                          depends on geometry, text, _schemas
+_schemas, text               no cross-package dependencies
+geometry                     depends on _schemas
+layout, licensing            no cross-package dependencies
+annotation                   depends on layout
+typography                   depends on geometry, _schemas, annotation
+ocr                          depends on geometry, text, _schemas, annotation
 matching                     depends on geometry, typography
 sources/pgdp                 depends on typography
 ```
 
-A module may not import from a package below it in that list. The lightness test
-in the extraction plan enforces the external boundary; this rule keeps the
-internal one honest, and a cycle here means something is in the wrong package.
+The annotation package was added after extraction. `typography/labels.py` and
+`ocr/review.py` now import its provenance enums, while
+`annotation/mappings.py` imports `layout.types`. Geometry's point and box
+modules import `_schemas`. These edges supersede the original dependency
+list, which omitted the later annotation package and the geometry-to-schema
+edge.
 
-This table was measured against the moved code rather than predicted. An
-earlier draft had `ocr` depending on typography and `layout` depending on
-geometry. Neither edge exists: `ocr` imports geometry, text and `_schemas`,
-and `layout` defines its own plain integer coordinates and imports nothing
-internal at all.
+The package import tests and import-boundary tests pass, but they do not
+constitute an exhaustive cycle or internal-layer enforcement test. Keep new
+imports consistent with these responsibilities and run consumer gates too.
 
 ## What this layout does not solve
 
@@ -167,3 +173,22 @@ Each reorganisation commit follows a verbatim move commit. To check one:
 3. The only content changes are import statements and `__init__` exports.
 4. Both repositories pass their gates.
 5. The internal dependency direction above still holds.
+
+## Adversarial Review
+
+A source and focused-test review on 2026-11-07 found two stale layout claims:
+the package now includes `annotation/`, and the dependency list omitted its
+edges plus geometry's dependency on `_schemas`. The layout and list above
+now reflect those imports. The provider registry in
+`geometry/bounding_box.py` and book-tools `geometry/image_ops.py` still
+preserve the intended dependency direction; the generic protocols remain in
+`matching/legacy_projection.py`.
+
+Validation: thirteen tests passed across contracts
+`tests/test_package.py`, `tests/test_torch_free_import.py`, and
+`tests/test_bounding_box_image_ops.py`. These cover public package imports,
+absence of heavy imports, and provider behavior. This review did not replay
+all historical move commits, remeasure line counts, or run every consumer's
+full gate. The linked extraction plan remains open because data rescue and
+retirement outcomes have not been established. This is the current review,
+not evidence that a review existed when the spec was first written.

@@ -2,7 +2,7 @@
 Status: built
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: architecture
 ---
 
@@ -37,10 +37,13 @@ worker remains location-independent. If detection batch size 1 still exhausts
 memory, the worker falls back to per-image CPU OCR. Non-memory failures surface
 unchanged.
 
-CPU and GPU use the same batched worker without a second concurrent worker
-pool. Consumer orchestration may split work into chunks. This split prevents one
-failed chunk from discarding earlier results. However, chunk size and DocTR's
-internal detection batch size remain separate controls.
+CPU and GPU use the same batched worker. Each batch runs in the event loop's
+default executor; the dispatcher does not serialize concurrent batch calls.
+Predictor cache lookup and construction are also unguarded. Callers must not
+assume that dispatch enforces one active OCR job or one predictor build.
+Consumer orchestration may split work into chunks to retain earlier results
+when a later chunk fails. Chunk size and DocTR's internal detection batch size
+remain separate controls.
 
 Remote Modal and shared-container batch dispatch remain explicit, unsupported
 stubs. A future implementation can use the existing request and protocol seam.
@@ -73,4 +76,6 @@ transports are unbuilt. Their stubs must not be described as available backends.
   `_tbd/ocr-container-docs/archive/plans/2026-05-16-pd-ocr-ops-new-repo.md`,
   `_tbd/ocr-container-docs/archive/plans/2026-05-16-phase-1-7-gpu-adapter-migration.md`,
   `_tbd/ocr-container-docs/specs/2026-05-16-cross-cut-design.md`
-- **Verified:** 2026-07-13 with the focused source and test evidence above.
+- **Verified:** 2026-11-07 by reading the source and focused tests above.
+  These tests use OCR doubles; they do not measure real GPU capacity or prove
+  safe concurrent predictor use.

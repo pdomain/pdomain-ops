@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-15
-Last verified: 2026-07-15
+Last verified: 2026-11-07
 Kind: process
 ---
 
@@ -61,3 +61,10 @@ new to the project, or reading in a second language. Aim for about a 7th grade E
 
 Read it once as if the reader is tired or new. Fix any sentence that needs a second read. Split long
 paragraphs. Remove filler.
+
+## Verification evidence
+
+Checked on 2026-11-07 against the readable-output rules in `AGENTS.md`, the
+writing skill routing in `CONVENTIONS.md`, and the reinstatement entry in
+[`../context/decisions.md`](../context/decisions.md). The local additions remain
+in place. These are writing instructions, not claims about runtime behavior.

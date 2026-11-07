@@ -2,7 +2,7 @@
 Status: built
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-07-13
+Last verified: 2026-11-07
 Kind: architecture
 ---
 
@@ -25,12 +25,16 @@ single-instance state, paths, and schemas.
 The device service exposes `GET` and `PUT /api/suite/device`. In local mode,
 `GET` reports discovered devices. It resolves the effective target in this
 order: application override, suite default, then automatic selection. `PUT`
-sets or clears an application or suite preference. Outside local mode, the
-route reports the mode. It does not enumerate or mutate local hardware.
+sets or clears an application or suite preference. Outside local mode, `GET`
+reports the mode without enumerating hardware. `PUT` still writes or clears
+the preference before returning that mode-only response. The mode check does
+not prevent preference changes.
 
-Device discovery reports CPU, CUDA, and Apple MPS availability through shared
-models. Local stage dispatch consumes the resolved target; the route does not
-run OCR itself.
+Device discovery reports CPU, CUDA, and Apple MPS through shared models. It
+also reports detected NVIDIA hardware that PyTorch cannot use, with
+`available=False` and a reason. CUDA memory probing can still raise when the
+card is full. Local stage dispatch consumes the resolved target; the route
+does not run OCR itself.
 
 ## Update boundary
 
@@ -90,4 +94,6 @@ also decide which shared paths they publish.
   `_tbd/ocr-container-docs/plans/2026-06-04-pd-suite-desktop-shell-plan.md`,
   `_tbd/ocr-container-docs/runbooks/desktop-launcher-integration.md`,
   `_tbd/ocr-container-docs/plans/2026-06-10-trainer-spa-next-arc.md`
-- **Verified:** 2026-07-13 against the current code and focused tests above.
+- **Verified:** 2026-11-07 by reading the current code and focused tests above,
+  plus `tests/gpu/test_device_probe.py`. The nonlocal `PUT` behavior follows
+  from source inspection; the route tests cover nonlocal `GET` only.
