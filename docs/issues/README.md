@@ -33,6 +33,8 @@ on 2026-11-07. The linked plans record the scope and outcomes still unverified.
 
 The same list is in [current state](../context/current-state.md).
 
+Draft plan: [F2 and Gutenberg layout regions](../plans/2026-11-07-f2-and-gutenberg-layout-regions.md).
+
 ## Shipped behavior
 
 - [Batched OCR dispatch](../architecture/batched-ocr-dispatch.md)
