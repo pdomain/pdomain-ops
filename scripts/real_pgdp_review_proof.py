@@ -10,11 +10,13 @@ missing public dependency instead of substituting P3 for OCR.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import csv
 import json
 import re
 import shlex
 import sys
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -89,6 +91,17 @@ class FileIdentity(TypedDict):
     mtime_ns: int
 
 
+class PublicOperation(TypedDict):
+    """One public CLI operation and its unmodified JSON outcome."""
+
+    subject: str
+    stage: str
+    argv: list[str]
+    status: Literal["ok", "error", "blocked"]
+    payload: dict[str, object] | None
+    error: str | None
+
+
 class CaseReport(TypedDict):
     """A per-page setup result preserved even when one page fails."""
 
@@ -124,6 +137,7 @@ class SetupReport(TypedDict):
     summary: SetupSummary
     integration: dict[str, list[str] | str]
     cases: list[CaseReport]
+    public_operations: list[PublicOperation]
 
 
 def load_cases(
@@ -243,6 +257,7 @@ def build_setup_report(
             ],
         },
         "cases": reports,
+        "public_operations": [],
     }
 
 
@@ -368,6 +383,335 @@ def _count_words(text: str | None) -> int | None:
     return len(_WORD_PATTERN.findall(text))
 
 
+def _run_json_command(
+    argv: tuple[str, ...], *, request: dict[str, object] | None, timeout_seconds: float
+) -> PublicOperation:
+    """Run one configured public CLI without a shell and parse its sole JSON result."""
+    try:
+        stdout, stderr, returncode = asyncio.run(
+            _communicate(argv, request=request, timeout_seconds=timeout_seconds)
+        )
+    except (OSError, TimeoutError) as error:
+        return _error_operation(argv, str(error))
+    try:
+        parsed: object = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        return _error_operation(argv, f"invalid JSON stdout: {error}; stderr: {stderr.strip()}")
+    if not isinstance(parsed, dict) or not all(isinstance(key, str) for key in parsed):
+        return _error_operation(argv, "JSON stdout must be one object")
+    payload = {key: value for key, value in parsed.items() if isinstance(key, str)}
+    if returncode != 0:
+        return _error_operation(
+            argv, f"exit {returncode}: {stderr.strip() or payload}", payload=payload
+        )
+    return {
+        "subject": "",
+        "stage": "",
+        "argv": list(argv),
+        "status": "ok",
+        "payload": payload,
+        "error": None,
+    }
+
+
+async def _communicate(
+    argv: tuple[str, ...], *, request: dict[str, object] | None, timeout_seconds: float
+) -> tuple[str, str, int]:
+    input_bytes = None if request is None else json.dumps(request).encode("utf-8")
+    process = await asyncio.create_subprocess_exec(
+        *argv,
+        stdin=asyncio.subprocess.PIPE if input_bytes is not None else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(input_bytes), timeout_seconds)
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise
+    returncode = process.returncode
+    if returncode is None:
+        raise RuntimeError("owned command completed without a return code")
+    return stdout.decode("utf-8"), stderr.decode("utf-8"), returncode
+
+
+def _error_operation(
+    argv: tuple[str, ...], error: str, *, payload: dict[str, object] | None = None
+) -> PublicOperation:
+    return {
+        "subject": "",
+        "stage": "",
+        "argv": list(argv),
+        "status": "error",
+        "payload": payload,
+        "error": error,
+    }
+
+
+def _operation(outcome: PublicOperation, *, subject: str, stage: str) -> PublicOperation:
+    outcome["subject"] = subject
+    outcome["stage"] = stage
+    return outcome
+
+
+def run_public_proof(
+    *,
+    cases: list[ProofCase],
+    corpus_root: Path,
+    source_python: Path,
+    source_module: str,
+    source_output_root: Path,
+    labeler_control: Path,
+    labeler_base_url: str,
+    timeout_seconds: float,
+) -> list[PublicOperation]:
+    """Exercise only frozen source and labeler public commands for every selected case.
+
+    The function does not interpret alignment groups or invent a review payload.
+    It records the raw inspect response and marks group review blocked until the
+    labeler publishes its concrete result example.
+    """
+    operations: list[PublicOperation] = []
+    source_prefix = (str(source_python), "-m", source_module)
+    control_prefix = (str(labeler_control), "--base-url", labeler_base_url)
+    grouped_cases: dict[str, list[ProofCase]] = {}
+    for case in cases:
+        grouped_cases.setdefault(case.project_id, []).append(case)
+    catalog = _run_json_command(
+        source_prefix,
+        request={
+            "command": "projects",
+            "corpus_root": str(corpus_root),
+            "query": "",
+            "limit": 100,
+            "offset": 0,
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    operations.append(_operation(catalog, subject="catalog", stage="source_projects"))
+    for project_id, project_cases in grouped_cases.items():
+        pages = _run_json_command(
+            source_prefix,
+            request={
+                "command": "pages",
+                "corpus_root": str(corpus_root),
+                "project_id": project_id,
+                "limit": 100,
+                "offset": 0,
+            },
+            timeout_seconds=timeout_seconds,
+        )
+        operations.append(_operation(pages, subject=project_id, stage="source_pages"))
+        prepare = _run_json_command(
+            source_prefix,
+            request={
+                "command": "prepare",
+                "corpus_root": str(corpus_root),
+                "project_id": project_id,
+                "page_keys": [case.page_key for case in project_cases],
+                "output_root": str(source_output_root),
+            },
+            timeout_seconds=timeout_seconds,
+        )
+        operations.append(_operation(prepare, subject=project_id, stage="source_prepare"))
+        book_path = _source_book_path(prepare)
+        if book_path is None:
+            continue
+        loaded = _run_json_command(
+            (*control_prefix, "load", book_path, "--page-index", "0"),
+            request=None,
+            timeout_seconds=timeout_seconds,
+        )
+        operations.append(_operation(loaded, subject=project_id, stage="labeler_load"))
+        labeler_project_id = _payload_nested_string(loaded, "project", "project_id")
+        if labeler_project_id is None:
+            operations.append(
+                {
+                    "subject": project_id,
+                    "stage": "labeler_case_sequence",
+                    "argv": [],
+                    "status": "blocked",
+                    "payload": loaded["payload"],
+                    "error": "load response has no published project_id field",
+                }
+            )
+            continue
+        for page_index, case in enumerate(project_cases):
+            _run_case_sequence(
+                operations=operations,
+                control_prefix=control_prefix,
+                labeler_project_id=labeler_project_id,
+                page_index=page_index,
+                case=case,
+                timeout_seconds=timeout_seconds,
+            )
+    return operations
+
+
+def _source_book_path(operation: PublicOperation) -> str | None:
+    payload = operation["payload"]
+    if payload is None or payload.get("ok") is not True:
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    book_path = result.get("book_path")
+    return book_path if isinstance(book_path, str) else None
+
+
+def _payload_string(operation: PublicOperation, field_name: str) -> str | None:
+    payload = operation["payload"]
+    if payload is None:
+        return None
+    value = payload.get(field_name)
+    return value if isinstance(value, str) else None
+
+
+def _payload_nested_string(
+    operation: PublicOperation, object_name: str, field_name: str
+) -> str | None:
+    payload = operation["payload"]
+    if payload is None:
+        return None
+    nested = payload.get(object_name)
+    if not isinstance(nested, dict):
+        return None
+    value = nested.get(field_name)
+    return value if isinstance(value, str) else None
+
+
+def _payload_integer(operation: PublicOperation, field_name: str) -> int | None:
+    payload = operation["payload"]
+    if payload is None:
+        return None
+    value = payload.get(field_name)
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _run_case_sequence(
+    *,
+    operations: list[PublicOperation],
+    control_prefix: tuple[str, ...],
+    labeler_project_id: str,
+    page_index: int,
+    case: ProofCase,
+    timeout_seconds: float,
+) -> None:
+    subject = f"{case.project_id}/{case.page_key}"
+    index = str(page_index)
+    timeout = str(timeout_seconds)
+    page = _operation(
+        _run_json_command(
+            (*control_prefix, "page", labeler_project_id, index, "--wait", "--timeout", timeout),
+            request=None,
+            timeout_seconds=timeout_seconds,
+        ),
+        subject=subject,
+        stage="labeler_page",
+    )
+    operations.append(page)
+    ocr = _operation(
+        _run_json_command(
+            (
+                *control_prefix,
+                "ocr",
+                labeler_project_id,
+                index,
+                "--engine",
+                "tesseract",
+                "--wait",
+                "--timeout",
+                timeout,
+            ),
+            request=None,
+            timeout_seconds=timeout_seconds,
+        ),
+        subject=subject,
+        stage="labeler_ocr",
+    )
+    operations.append(ocr)
+    page_after_ocr = _operation(
+        _run_json_command(
+            (*control_prefix, "page", labeler_project_id, index, "--wait", "--timeout", timeout),
+            request=None,
+            timeout_seconds=timeout_seconds,
+        ),
+        subject=subject,
+        stage="labeler_page_after_ocr",
+    )
+    operations.append(page_after_ocr)
+    generation = _payload_integer(page_after_ocr, "generation")
+    if generation is None:
+        operations.append(
+            {
+                "subject": subject,
+                "stage": "labeler_align",
+                "argv": [],
+                "status": "blocked",
+                "payload": page_after_ocr["payload"],
+                "error": "post-OCR page response has no published generation field",
+            }
+        )
+    else:
+        operations.append(
+            _operation(
+                _run_json_command(
+                    (
+                        *control_prefix,
+                        "align",
+                        labeler_project_id,
+                        index,
+                        "--request-id",
+                        f"proof-{uuid.uuid4()}",
+                        "--generation",
+                        str(generation),
+                        "--wait",
+                        "--timeout",
+                        timeout,
+                    ),
+                    request=None,
+                    timeout_seconds=timeout_seconds,
+                ),
+                subject=subject,
+                stage="labeler_align",
+            )
+        )
+    commands = (
+        ("inspect", labeler_project_id, index),
+        (
+            "export",
+            labeler_project_id,
+            "--page-index",
+            index,
+            "--regions-only",
+            "--wait",
+            "--timeout",
+            timeout,
+        ),
+    )
+    operations.extend(
+        _operation(
+            _run_json_command(
+                (*control_prefix, *command), request=None, timeout_seconds=timeout_seconds
+            ),
+            subject=subject,
+            stage=f"labeler_{command[0]}",
+        )
+        for command in commands
+    )
+    operations.append(
+        {
+            "subject": subject,
+            "stage": "labeler_review_group",
+            "argv": [],
+            "status": "blocked",
+            "payload": None,
+            "error": "inspect schema example is not published; no group ID or review body was invented",
+        }
+    )
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -410,6 +754,12 @@ def _parser() -> argparse.ArgumentParser:
         "--source-module",
         default="pdomain_source_data.pgdp_review_cli",
         help="source JSON CLI module; default is the frozen source bridge contract",
+    )
+    parser.add_argument(
+        "--source-output-root",
+        type=Path,
+        default=Path("artifacts/source/books"),
+        help="prepared-book output root passed to the source JSON CLI",
     )
     parser.add_argument("--labeler-base-url", help="labeler HTTP base URL for the final proof")
     parser.add_argument("--labeler-control", type=Path, help="labeler JSON-control executable")
@@ -466,6 +816,33 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     _write_report(report, destination)
     if mode == "proof":
+        missing_configuration = [
+            name
+            for name, value in (
+                ("--source-python", args.source_python),
+                ("--labeler-base-url", args.labeler_base_url),
+                ("--labeler-control", args.labeler_control),
+            )
+            if value is None
+        ]
+        if not missing_configuration:
+            report["public_operations"] = run_public_proof(
+                cases=cases,
+                corpus_root=args.corpus_root,
+                source_python=args.source_python,
+                source_module=args.source_module,
+                source_output_root=args.source_output_root,
+                labeler_control=args.labeler_control,
+                labeler_base_url=args.labeler_base_url,
+                timeout_seconds=args.server_timeout_seconds,
+            )
+            report["integration"]["status"] = "public_commands_executed_review_schema_pending"
+            _write_report(report, destination)
+        reason = (
+            f"missing required public-interface configuration: {', '.join(missing_configuration)}"
+            if missing_configuration
+            else "review-group payload waits for the labeler inspect schema example"
+        )
         print(
             json.dumps(
                 {
@@ -473,7 +850,7 @@ def main(argv: list[str] | None = None) -> int:
                     "report": str(destination),
                     "error": {
                         "code": "dependencies_unavailable",
-                        "message": "public source and labeler proof components are not bound by this stage",
+                        "message": reason,
                     },
                 }
             )

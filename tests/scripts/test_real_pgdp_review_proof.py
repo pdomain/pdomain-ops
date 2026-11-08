@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from scripts import real_pgdp_review_proof as proof
 from scripts.real_pgdp_review_proof import (
     CaseListError,
     OcrTsvError,
@@ -136,3 +137,76 @@ def test_proof_mode_returns_one_blocked_machine_result(
     assert payload["ok"] is False
     assert payload["error"]["code"] == "dependencies_unavailable"
     assert payload["report"] == str(report_path)
+
+
+def test_public_proof_sequences_each_page_without_inventing_review_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[tuple[str, ...], dict[str, object] | None]] = []
+
+    def run_command(
+        argv: tuple[str, ...], *, request: dict[str, object] | None, timeout_seconds: float
+    ) -> proof.PublicOperation:
+        del timeout_seconds
+        calls.append((argv, request))
+        if request is not None and request["command"] == "prepare":
+            payload: dict[str, object] = {
+                "ok": True,
+                "result": {"book_path": "/prepared/projectIDone"},
+            }
+        elif "load" in argv:
+            payload = {"project": {"project_id": "labeler-project"}}
+        elif "page" in argv:
+            payload = {"generation": 7}
+        else:
+            payload = {"ok": True}
+        return {
+            "subject": "",
+            "stage": "",
+            "argv": list(argv),
+            "status": "ok",
+            "payload": payload,
+            "error": None,
+        }
+
+    monkeypatch.setattr(proof, "_run_json_command", run_command)
+    operations = proof.run_public_proof(
+        cases=[
+            proof.ProofCase("projectIDone", "008.png", "verse_indent"),
+            proof.ProofCase("projectIDone", "009.png", "verse_stanzas_case"),
+        ],
+        corpus_root=tmp_path / "corpus",
+        source_python=tmp_path / "python",
+        source_module="pdomain_source_data.pgdp_review_cli",
+        source_output_root=tmp_path / "prepared",
+        labeler_control=tmp_path / "control",
+        labeler_base_url="http://127.0.0.1:8000",
+        timeout_seconds=10.0,
+    )
+
+    assert sum(operation["stage"] == "labeler_ocr" for operation in operations) == 2
+    assert sum(operation["stage"] == "labeler_page_after_ocr" for operation in operations) == 2
+    assert sum(operation["stage"] == "labeler_align" for operation in operations) == 2
+    assert sum(operation["stage"] == "labeler_export" for operation in operations) == 2
+    assert sum(operation["stage"] == "labeler_review_group" for operation in operations) == 2
+    assert all(
+        operation["status"] == "blocked"
+        for operation in operations
+        if operation["stage"] == "labeler_review_group"
+    )
+    align_commands = [
+        operation["argv"] for operation in operations if operation["stage"] == "labeler_align"
+    ]
+    assert all("--generation" in command and "7" in command for command in align_commands)
+    prepare_requests = [
+        request for _, request in calls if request is not None and request["command"] == "prepare"
+    ]
+    assert prepare_requests == [
+        {
+            "command": "prepare",
+            "corpus_root": str(tmp_path / "corpus"),
+            "project_id": "projectIDone",
+            "page_keys": ["008.png", "009.png"],
+            "output_root": str(tmp_path / "prepared"),
+        }
+    ]
