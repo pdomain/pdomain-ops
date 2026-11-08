@@ -485,7 +485,6 @@ def run_public_proof(
         request={
             "command": "projects",
             "corpus_root": str(corpus_root),
-            "query": "",
             "limit": 100,
             "offset": 0,
         },
