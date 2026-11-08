@@ -470,9 +470,8 @@ def run_public_proof(
 ) -> list[PublicOperation]:
     """Exercise only frozen source and labeler public commands for every selected case.
 
-    The function does not interpret alignment groups or invent a review payload.
-    It records the raw inspect response and marks group review blocked until the
-    labeler publishes its concrete result example.
+    It records the raw inspect response and submits at most one representative
+    group review per page using the frozen DTO, avoiding bulk synthetic review.
     """
     operations: list[PublicOperation] = []
     source_prefix = (str(source_python), "-m", source_module)
@@ -728,7 +727,7 @@ def _run_case_sequence(
                 subject=subject,
                 stage="labeler_review_group",
             )
-            for group_id in group_ids
+            for group_id in group_ids[:1]
         )
     operations.append(
         _operation(
