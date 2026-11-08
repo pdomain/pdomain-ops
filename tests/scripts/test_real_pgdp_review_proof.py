@@ -161,7 +161,10 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
         elif "inspect" in argv:
             payload = {
                 "generation": 7,
-                "result": {"result_id": "result-1", "groups": [{"group_id": "group-1"}]},
+                "result": {
+                    "result_id": "result-1",
+                    "groups": [{"group_id": "group-1", "ocr_text": "Alpha"}],
+                },
             }
         else:
             payload = {"ok": True}
@@ -204,6 +207,8 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
         operation["argv"] for operation in operations if operation["stage"] == "labeler_align"
     ]
     assert all("--generation" in command and "7" in command for command in align_commands)
+    assert sum(operation["stage"] == "labeler_proposals" for operation in operations) == 2
+    assert sum(operation["stage"] == "labeler_region_review" for operation in operations) == 2
     prepare_requests = [
         request for _, request in calls if request is not None and request["command"] == "prepare"
     ]
@@ -216,3 +221,7 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
             "output_root": str(tmp_path / "prepared"),
         }
     ]
+
+
+def test_public_proof_rejects_an_empty_all_pass_operation_list() -> None:
+    assert proof.public_proof_complete(cases=[], operations=[]) is False

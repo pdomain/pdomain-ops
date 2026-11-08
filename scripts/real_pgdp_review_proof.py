@@ -82,6 +82,12 @@ class AlignmentMetrics(TypedDict):
     split_join_groups: int | None
     disagreements: int | None
     timing_ms: int | None
+    group_dispositions: dict[str, int] | None
+    projected_hints: int | None
+    unresolved_hints: int | None
+    ocr_token_count: int | None
+    split_relations: int | None
+    join_relations: int | None
 
 
 class FileIdentity(TypedDict):
@@ -114,6 +120,25 @@ class CaseReport(TypedDict):
     metrics: AlignmentMetrics
     blockers: list[str]
     input_identities: dict[str, FileIdentity]
+    proof_evidence: ProofEvidence
+
+
+class ProofEvidence(TypedDict):
+    """Public observations required to distinguish a completed proof from setup."""
+
+    status: str
+    raw_ocr_text: str | None
+    ground_truth_text: str | None
+    raw_ocr_token_count: int | None
+    raw_ocr_word_count: int | None
+    ocr_engine: str | None
+    reviewed_group_id: str | None
+    reviewed_note: str | None
+    reviewed_text: str | None
+    region_count_after_reload: int | None
+    proposal_count: int | None
+    invariants: list[str]
+    behavior_observations: dict[str, str]
 
 
 class SetupSummary(TypedDict):
@@ -302,9 +327,30 @@ def _inspect_case(*, case: ProofCase, corpus_root: Path, ocr_root: Path) -> Case
             "split_join_groups": None,
             "disagreements": None,
             "timing_ms": None,
+            "group_dispositions": None,
+            "projected_hints": None,
+            "unresolved_hints": None,
+            "ocr_token_count": None,
+            "split_relations": None,
+            "join_relations": None,
         },
         "blockers": blockers,
         "input_identities": identities,
+        "proof_evidence": {
+            "status": "not_run",
+            "raw_ocr_text": None,
+            "ground_truth_text": None,
+            "raw_ocr_token_count": None,
+            "raw_ocr_word_count": None,
+            "ocr_engine": None,
+            "reviewed_group_id": None,
+            "reviewed_note": None,
+            "reviewed_text": None,
+            "region_count_after_reload": None,
+            "proposal_count": None,
+            "invariants": [],
+            "behavior_observations": {},
+        },
     }
 
 
@@ -547,6 +593,25 @@ def run_public_proof(
                 timeout_seconds=timeout_seconds,
                 review_decision=review_decision,
             )
+        propose = _operation(
+            _run_json_command(
+                (*control_prefix, "propose", labeler_project_id, "--wait"),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=project_id,
+            stage="labeler_propose",
+        )
+        operations.append(propose)
+        for page_index, case in enumerate(project_cases):
+            _run_region_review_sequence(
+                operations=operations,
+                control_prefix=control_prefix,
+                labeler_project_id=labeler_project_id,
+                page_index=page_index,
+                case=case,
+                timeout_seconds=timeout_seconds,
+            )
     return operations
 
 
@@ -689,8 +754,10 @@ def _run_case_sequence(
         stage="labeler_inspect",
     )
     operations.append(inspect)
-    result_id, review_generation, group_ids = _review_targets(inspect)
-    if result_id is None or review_generation is None:
+    result_id, review_generation, groups = _review_targets(inspect)
+    target = groups[0] if groups else None
+    review: PublicOperation | None = None
+    if result_id is None or review_generation is None or target is None:
         operations.append(
             {
                 "subject": subject,
@@ -698,47 +765,66 @@ def _run_case_sequence(
                 "argv": [],
                 "status": "blocked",
                 "payload": inspect["payload"],
-                "error": "inspect response has no result_id/current generation",
+                "error": "inspect response has no editable current group",
             }
         )
     else:
-        operations.extend(
-            _operation(
-                _run_json_command(
-                    (
-                        *control_prefix,
-                        "request",
-                        "PATCH",
-                        f"/api/projects/{labeler_project_id}/pages/{index}/source-alignment/groups/{group_id}",
-                        "--json",
-                        json.dumps(
-                            {
-                                "expected_generation": review_generation,
-                                "result_id": result_id,
-                                "decision": review_decision,
-                                "note": "",
-                                "reviewed_text": None,
-                            }
-                        ),
+        group_id, reviewed_text = target
+        note = f"real-proof:{case.project_id}/{case.page_key}"
+        review = _operation(
+            _run_json_command(
+                (
+                    *control_prefix,
+                    "request",
+                    "PATCH",
+                    f"/api/projects/{labeler_project_id}/pages/{index}/source-alignment/groups/{group_id}",
+                    "--json",
+                    json.dumps(
+                        {
+                            "expected_generation": review_generation,
+                            "result_id": result_id,
+                            "decision": review_decision,
+                            "note": note,
+                            "reviewed_text": reviewed_text,
+                        }
                     ),
-                    request=None,
-                    timeout_seconds=timeout_seconds,
                 ),
-                subject=subject,
-                stage="labeler_review_group",
-            )
-            for group_id in group_ids[:1]
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_review_group",
         )
+        operations.append(review)
+    save_generation = (
+        _payload_integer(review, "generation") if review is not None else review_generation
+    )
     operations.append(
         _operation(
             _run_json_command(
                 (
                     *control_prefix,
-                    "export",
+                    "save",
                     labeler_project_id,
-                    "--page-index",
                     index,
-                    "--regions-only",
+                    "--generation",
+                    str(save_generation),
+                ),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_save",
+        )
+    )
+    operations.append(
+        _operation(
+            _run_json_command(
+                (
+                    *control_prefix,
+                    "reload",
+                    labeler_project_id,
+                    index,
                     "--wait",
                     "--timeout",
                     timeout,
@@ -747,12 +833,25 @@ def _run_case_sequence(
                 timeout_seconds=timeout_seconds,
             ),
             subject=subject,
-            stage="labeler_export",
+            stage="labeler_reload",
+        )
+    )
+    operations.append(
+        _operation(
+            _run_json_command(
+                (*control_prefix, "inspect", labeler_project_id, index),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_inspect_after_reload",
         )
     )
 
 
-def _review_targets(operation: PublicOperation) -> tuple[str | None, int | None, tuple[str, ...]]:
+def _review_targets(
+    operation: PublicOperation,
+) -> tuple[str | None, int | None, tuple[tuple[str, str], ...]]:
     payload = operation["payload"]
     if payload is None:
         return None, None, ()
@@ -769,11 +868,467 @@ def _review_targets(operation: PublicOperation) -> tuple[str | None, int | None,
     if not isinstance(result_id, str) or not isinstance(groups, list):
         return None, None, ()
     group_ids = tuple(
-        group_id
+        (group_id, reviewed_text)
         for group in groups
-        if isinstance(group, dict) and isinstance((group_id := group.get("group_id")), str)
+        if isinstance(group, dict)
+        and isinstance((group_id := group.get("group_id")), str)
+        and isinstance((reviewed_text := group.get("ocr_text")), str)
     )
     return result_id, generation, group_ids
+
+
+def _run_region_review_sequence(
+    *,
+    operations: list[PublicOperation],
+    control_prefix: tuple[str, ...],
+    labeler_project_id: str,
+    page_index: int,
+    case: ProofCase,
+    timeout_seconds: float,
+) -> None:
+    subject = f"{case.project_id}/{case.page_key}"
+    index = str(page_index)
+    proposals = _operation(
+        _run_json_command(
+            (*control_prefix, "proposals", labeler_project_id, index),
+            request=None,
+            timeout_seconds=timeout_seconds,
+        ),
+        subject=subject,
+        stage="labeler_proposals",
+    )
+    operations.append(proposals)
+    proposal_id = _first_proposal_id(proposals)
+    if proposal_id is None:
+        operations.append(
+            {
+                "subject": subject,
+                "stage": "labeler_region_review",
+                "argv": [],
+                "status": "ok",
+                "payload": proposals["payload"],
+                "error": "no genuine region proposal was returned",
+            }
+        )
+    else:
+        operations.append(
+            _operation(
+                _run_json_command(
+                    (
+                        *control_prefix,
+                        "region-review",
+                        labeler_project_id,
+                        index,
+                        proposal_id,
+                        "accept",
+                    ),
+                    request=None,
+                    timeout_seconds=timeout_seconds,
+                ),
+                subject=subject,
+                stage="labeler_region_review",
+            )
+        )
+    operations.append(
+        _operation(
+            _run_json_command(
+                (
+                    *control_prefix,
+                    "reload",
+                    labeler_project_id,
+                    index,
+                    "--wait",
+                    "--timeout",
+                    str(timeout_seconds),
+                ),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_reload_after_region_review",
+        )
+    )
+    operations.append(
+        _operation(
+            _run_json_command(
+                (*control_prefix, "page", labeler_project_id, index),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_page_after_region_review",
+        )
+    )
+    operations.append(
+        _operation(
+            _run_json_command(
+                (
+                    *control_prefix,
+                    "export",
+                    labeler_project_id,
+                    "--page-index",
+                    index,
+                    "--regions-only",
+                    "--wait",
+                ),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_export",
+        )
+    )
+
+
+def _first_proposal_id(operation: PublicOperation) -> str | None:
+    payload = operation["payload"]
+    if payload is None:
+        return None
+    proposals = payload.get("proposals")
+    if not isinstance(proposals, list):
+        return None
+    for proposal in proposals:
+        if isinstance(proposal, dict):
+            proposal_id = proposal.get("proposal_id")
+            if isinstance(proposal_id, str):
+                return proposal_id
+    return None
+
+
+def public_proof_complete(*, cases: list[ProofCase], operations: list[PublicOperation]) -> bool:
+    """Return whether every selected page completed each bounded public stage."""
+    if not cases or not operations or any(operation["status"] != "ok" for operation in operations):
+        return False
+    required = {
+        "labeler_ocr",
+        "labeler_align",
+        "labeler_inspect",
+        "labeler_review_group",
+        "labeler_save",
+        "labeler_reload",
+        "labeler_inspect_after_reload",
+        "labeler_proposals",
+        "labeler_region_review",
+        "labeler_reload_after_region_review",
+        "labeler_page_after_region_review",
+        "labeler_export",
+    }
+    observed = {(operation["subject"], operation["stage"]) for operation in operations}
+    if any(
+        (f"{case.project_id}/{case.page_key}", stage) not in observed
+        for case in cases
+        for stage in required
+    ):
+        return False
+    return all((case.project_id, "labeler_propose") in observed for case in cases)
+
+
+def populate_proof_evidence(
+    *, report: SetupReport, cases: list[ProofCase], operations: list[PublicOperation]
+) -> None:
+    """Populate per-page metrics and persistence evidence from raw public responses."""
+    for case_report, case in zip(report["cases"], cases, strict=True):
+        subject = f"{case.project_id}/{case.page_key}"
+        before_page = _operation_payload(operations, subject, "labeler_page_after_ocr")
+        after_page = _operation_payload(operations, subject, "labeler_page_after_region_review")
+        before_inspect = _operation_payload(operations, subject, "labeler_inspect")
+        after_inspect = _operation_payload(operations, subject, "labeler_inspect_after_reload")
+        proposals = _operation_payload(operations, subject, "labeler_proposals")
+        evidence = case_report["proof_evidence"]
+        before_ocr, before_gt = _page_texts(before_page)
+        after_ocr, after_gt = _page_texts(after_page)
+        before_groups = _inspection_groups(before_inspect)
+        after_groups = _inspection_groups(after_inspect)
+        note = f"real-proof:{subject}"
+        reviewed = next((group for group in after_groups if group[3] == note), None)
+        invariants: list[str] = []
+        if before_ocr == after_ocr and before_ocr is not None:
+            invariants.append("raw_ocr_text_preserved")
+        if before_gt == after_gt and before_gt is not None:
+            invariants.append("ground_truth_text_preserved")
+        if _group_topology(before_groups) == _group_topology(after_groups):
+            invariants.append("alignment_group_order_boxes_source_ids_preserved")
+        if reviewed is not None and reviewed[4] is not None:
+            invariants.append("edited_group_note_and_reviewed_text_survived_reload")
+        evidence["status"] = "verified" if len(invariants) == 4 else "invariants_incomplete"
+        evidence["raw_ocr_text"] = before_ocr
+        evidence["ground_truth_text"] = before_gt
+        evidence["raw_ocr_token_count"] = len(before_groups)
+        evidence["raw_ocr_word_count"] = _count_words(before_ocr)
+        evidence["ocr_engine"] = _ocr_engine(operations, subject)
+        evidence["reviewed_group_id"] = reviewed[0] if reviewed is not None else None
+        evidence["reviewed_note"] = reviewed[3] if reviewed is not None else None
+        evidence["reviewed_text"] = reviewed[4] if reviewed is not None else None
+        evidence["region_count_after_reload"] = _list_length(after_page, "regions")
+        evidence["proposal_count"] = _list_length(proposals, "proposals")
+        evidence["invariants"] = invariants
+        evidence["behavior_observations"] = _behavior_observations(
+            case, after_page, after_inspect, proposals
+        )
+        _populate_metrics(case_report["metrics"], before_inspect, before_groups)
+
+
+def _operation_payload(
+    operations: list[PublicOperation], subject: str, stage: str
+) -> dict[str, object] | None:
+    for operation in reversed(operations):
+        if operation["subject"] == subject and operation["stage"] == stage:
+            return operation["payload"]
+    return None
+
+
+def _page_texts(payload: dict[str, object] | None) -> tuple[str | None, str | None]:
+    if payload is None:
+        return None, None
+    ocr = payload.get("page_text_ocr")
+    ground_truth = payload.get("page_text_gt")
+    return (
+        ocr if isinstance(ocr, str) else None,
+        ground_truth if isinstance(ground_truth, str) else None,
+    )
+
+
+def _list_length(payload: dict[str, object] | None, name: str) -> int | None:
+    if payload is None:
+        return None
+    value = payload.get(name)
+    return len(value) if isinstance(value, list) else None
+
+
+def _ocr_engine(operations: list[PublicOperation], subject: str) -> str | None:
+    for operation in operations:
+        if operation["subject"] == subject and operation["stage"] == "labeler_ocr":
+            try:
+                engine_index = operation["argv"].index("--engine")
+            except ValueError:
+                return None
+            engine = operation["argv"][engine_index + 1 : engine_index + 2]
+            return engine[0] if engine else None
+    return None
+
+
+def _inspection_groups(
+    payload: dict[str, object] | None,
+) -> list[tuple[str, str, str, str, str | None]]:
+    if payload is None:
+        return []
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return []
+    groups = result.get("groups")
+    if not isinstance(groups, list):
+        return []
+    snapshots: list[tuple[str, str, str, str, str | None]] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        group_id = group.get("group_id")
+        ocr_text = group.get("ocr_text")
+        box = group.get("box")
+        source_ids = group.get("source_word_ids")
+        note = group.get("note")
+        reviewed_text = group.get("reviewed_text")
+        if (
+            isinstance(group_id, str)
+            and isinstance(ocr_text, str)
+            and isinstance(note, str)
+            and (reviewed_text is None or isinstance(reviewed_text, str))
+        ):
+            snapshots.append(
+                (
+                    group_id,
+                    ocr_text,
+                    json.dumps(
+                        {"box": box, "source_word_ids": source_ids},
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    note,
+                    reviewed_text,
+                )
+            )
+    return snapshots
+
+
+def _group_topology(
+    groups: list[tuple[str, str, str, str, str | None]],
+) -> list[tuple[str, str, str]]:
+    return [(group_id, ocr_text, box) for group_id, ocr_text, box, _note, _reviewed in groups]
+
+
+def _populate_metrics(
+    metrics: AlignmentMetrics,
+    payload: dict[str, object] | None,
+    groups: list[tuple[str, str, str, str, str | None]],
+) -> None:
+    if payload is None or not isinstance((result := payload.get("result")), dict):
+        return
+    alignment = result.get("alignment")
+    projection = result.get("projection")
+    if isinstance(alignment, dict):
+        metrics["f2_to_p3_mapped"] = _mapping_count(alignment.get("f2_to_p3"))
+        metrics["p3_to_ocr_mapped"] = _mapping_count(alignment.get("p3_to_ocr"))
+        metrics["disagreements"] = _list_value_length(alignment.get("warnings"))
+        metrics["timing_ms"] = _timing_ms(alignment.get("timing"))
+    if isinstance(projection, dict):
+        metrics["projected_hints"] = _value_count(projection.get("layout_hints"))
+        metrics["style_projection"] = _value_count(projection.get("style_spans"))
+        metrics["unresolved_hints"] = _value_count(projection.get("unresolved"))
+        metrics["unresolved"] = metrics["unresolved_hints"]
+    metrics["group_dispositions"] = _group_dispositions(payload)
+    metrics["ocr_token_count"] = len(groups)
+    split_count, join_count = _relation_counts(alignment)
+    metrics["split_relations"] = split_count
+    metrics["join_relations"] = join_count
+    metrics["split_join_groups"] = split_count + join_count
+
+
+def _group_dispositions(payload: dict[str, object]) -> dict[str, int]:
+    result = payload.get("result")
+    if not isinstance(result, dict) or not isinstance((groups := result.get("groups")), list):
+        return {}
+    counts: dict[str, int] = {}
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        disposition = group.get("disposition")
+        if isinstance(disposition, str):
+            counts[disposition] = counts.get(disposition, 0) + 1
+    return counts
+
+
+def _relation_counts(alignment: object) -> tuple[int, int]:
+    if not isinstance(alignment, dict):
+        return 0, 0
+    split_count = 0
+    join_count = 0
+    for mapping_name in ("f2_to_p3", "p3_to_ocr"):
+        mapping = alignment.get(mapping_name)
+        if not isinstance(mapping, dict) or not isinstance(
+            (alternative := mapping.get("best_alternative")), dict
+        ):
+            continue
+        relations = alternative.get("relations")
+        if not isinstance(relations, list):
+            continue
+        for relation in relations:
+            if not isinstance(relation, dict) or not isinstance(
+                (kind := relation.get("kind")), str
+            ):
+                continue
+            split_count += int(kind == "source_to_fragments")
+            join_count += int(kind == "sources_to_one")
+    return split_count, join_count
+
+
+def _mapping_count(value: object) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    alternative = value.get("best_alternative")
+    if not isinstance(alternative, dict):
+        return 0
+    relations = alternative.get("relations")
+    return len(relations) if isinstance(relations, list) else 0
+
+
+def _integer_value(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _value_count(value: object) -> int | None:
+    integer = _integer_value(value)
+    if integer is not None:
+        return integer
+    return len(value) if isinstance(value, list) else None
+
+
+def _list_value_length(value: object) -> int | None:
+    return len(value) if isinstance(value, list) else None
+
+
+def _timing_ms(value: object) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    seconds = [
+        item
+        for item in value.values()
+        if isinstance(item, (int, float)) and not isinstance(item, bool)
+    ]
+    return round(sum(seconds) * 1000) if seconds else None
+
+
+def _behavior_observations(
+    case: ProofCase,
+    page: dict[str, object] | None,
+    inspect: dict[str, object] | None,
+    proposals: dict[str, object] | None,
+) -> dict[str, str]:
+    ocr, _ground_truth = _page_texts(page)
+    observations: dict[str, str] = {}
+    hints = _page_layout_hints(page)
+    if case.intent == "numeric_tables":
+        observations["not_poetry"] = (
+            "verified" if not any("verse" in hint for hint in hints) else "mismatch"
+        )
+    if case.intent == "formatter_comments_tb":
+        observations["formatter_or_tb_visible"] = (
+            "mismatch"
+            if ocr is not None and ("/*" in ocr or "*/" in ocr or "<tb>" in ocr.casefold())
+            else "verified"
+        )
+    if case.intent.startswith("verse"):
+        observations["verse_stanzas_or_indents"] = (
+            "verified"
+            if any("stanza" in hint or "indent" in hint for hint in hints)
+            else "genuine_mismatch"
+        )
+    if case.intent == "physical_columns_captions":
+        proposal_count = _list_length(proposals, "proposals")
+        column_pairs = _column_pairs(page)
+        if proposal_count == 0:
+            observations["independent_columns"] = "missing_proposal"
+        elif any(indices == {0, 1} for indices in column_pairs.values()):
+            observations["independent_columns"] = "verified"
+        else:
+            observations["independent_columns"] = "genuine_mismatch"
+    return observations
+
+
+def _page_layout_hints(payload: dict[str, object] | None) -> list[str]:
+    if payload is None:
+        return []
+    values = payload.get("layout_hints")
+    return (
+        [json.dumps(value, sort_keys=True) for value in values] if isinstance(values, list) else []
+    )
+
+
+def _column_pairs(payload: dict[str, object] | None) -> dict[str, set[int]]:
+    if payload is None or not isinstance((regions := payload.get("regions")), list):
+        return {}
+    pairs: dict[str, set[int]] = {}
+    for region in regions:
+        _record_column_pairs(region, pairs)
+    return pairs
+
+
+def _record_column_pairs(value: object, pairs: dict[str, set[int]]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _record_column_pairs(item, pairs)
+        return
+    if not isinstance(value, dict):
+        return
+    group_id = value.get("column_group_id")
+    column_index = value.get("column_index")
+    if (
+        isinstance(group_id, str)
+        and isinstance(column_index, int)
+        and not isinstance(column_index, bool)
+    ):
+        pairs.setdefault(group_id, set()).add(column_index)
+    for nested in value.values():
+        _record_column_pairs(nested, pairs)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -830,8 +1385,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--review-decision",
         choices=("pending", "accepted", "rejected", "edited"),
-        default="pending",
-        help="explicit non-destructive group-review decision",
+        default="edited",
+        help="explicit bounded group-review decision",
     )
     parser.add_argument(
         "--server-timeout-seconds",
@@ -859,7 +1414,9 @@ def _parser() -> argparse.ArgumentParser:
 def _write_report(report: SetupReport, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     (destination.parent / ".nobackup").touch()
-    destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(destination)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -896,6 +1453,8 @@ def main(argv: list[str] | None = None) -> int:
             if value is None
         ]
         if not missing_configuration:
+            report["integration"]["status"] = "public_workflow_running"
+            _write_report(report, destination)
             report["public_operations"] = run_public_proof(
                 cases=cases,
                 corpus_root=args.corpus_root,
@@ -907,13 +1466,38 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=args.server_timeout_seconds,
                 review_decision=args.review_decision,
             )
-            report["integration"]["status"] = "public_commands_executed_review_schema_pending"
+            populate_proof_evidence(
+                report=report, cases=cases, operations=report["public_operations"]
+            )
+            report["integration"]["status"] = "public_workflow_evidence_collected"
             _write_report(report, destination)
-        reason = (
-            f"missing required public-interface configuration: {', '.join(missing_configuration)}"
-            if missing_configuration
-            else "review-group payload waits for the labeler inspect schema example"
-        )
+            evidence_complete = all(
+                case_report["proof_evidence"]["status"] == "verified"
+                for case_report in report["cases"]
+            )
+            if (
+                public_proof_complete(cases=cases, operations=report["public_operations"])
+                and evidence_complete
+            ):
+                report["integration"]["status"] = "public_workflow_complete"
+                report["integration"]["requirements"] = []
+                _write_report(report, destination)
+                print(
+                    json.dumps(
+                        {"ok": True, "report": str(destination), "summary": report["summary"]}
+                    )
+                )
+                return 0
+            report["integration"]["status"] = "public_workflow_incomplete"
+            report["integration"]["requirements"] = [
+                case_report["project_id"] + "/" + case_report["page_key"]
+                for case_report in report["cases"]
+                if case_report["proof_evidence"]["status"] != "verified"
+            ]
+            _write_report(report, destination)
+            reason = "required public stages or persistence invariants are incomplete"
+        else:
+            reason = f"missing required public-interface configuration: {', '.join(missing_configuration)}"
         print(
             json.dumps(
                 {
