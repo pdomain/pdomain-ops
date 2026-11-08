@@ -39,6 +39,7 @@ _TESSERACT_COLUMNS = (
 _WORD_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 
 ProofMode = Literal["describe", "validate-ocr", "proof"]
+ReviewDecision = Literal["pending", "accepted", "rejected", "edited"]
 
 
 class CaseListError(ValueError):
@@ -465,6 +466,7 @@ def run_public_proof(
     labeler_control: Path,
     labeler_base_url: str,
     timeout_seconds: float,
+    review_decision: ReviewDecision,
 ) -> list[PublicOperation]:
     """Exercise only frozen source and labeler public commands for every selected case.
 
@@ -545,6 +547,7 @@ def run_public_proof(
                 page_index=page_index,
                 case=case,
                 timeout_seconds=timeout_seconds,
+                review_decision=review_decision,
             )
     return operations
 
@@ -597,6 +600,7 @@ def _run_case_sequence(
     page_index: int,
     case: ProofCase,
     timeout_seconds: float,
+    review_decision: ReviewDecision,
 ) -> None:
     subject = f"{case.project_id}/{case.page_key}"
     index = str(page_index)
@@ -677,39 +681,101 @@ def _run_case_sequence(
                 stage="labeler_align",
             )
         )
-    commands = (
-        ("inspect", labeler_project_id, index),
-        (
-            "export",
-            labeler_project_id,
-            "--page-index",
-            index,
-            "--regions-only",
-            "--wait",
-            "--timeout",
-            timeout,
+    inspect = _operation(
+        _run_json_command(
+            (*control_prefix, "inspect", labeler_project_id, index),
+            request=None,
+            timeout_seconds=timeout_seconds,
         ),
+        subject=subject,
+        stage="labeler_inspect",
     )
-    operations.extend(
+    operations.append(inspect)
+    result_id, review_generation, group_ids = _review_targets(inspect)
+    if result_id is None or review_generation is None:
+        operations.append(
+            {
+                "subject": subject,
+                "stage": "labeler_review_group",
+                "argv": [],
+                "status": "blocked",
+                "payload": inspect["payload"],
+                "error": "inspect response has no result_id/current generation",
+            }
+        )
+    else:
+        operations.extend(
+            _operation(
+                _run_json_command(
+                    (
+                        *control_prefix,
+                        "request",
+                        "PATCH",
+                        f"/api/projects/{labeler_project_id}/pages/{index}/source-alignment/groups/{group_id}",
+                        "--json",
+                        json.dumps(
+                            {
+                                "expected_generation": review_generation,
+                                "result_id": result_id,
+                                "decision": review_decision,
+                                "note": "",
+                                "reviewed_text": None,
+                            }
+                        ),
+                    ),
+                    request=None,
+                    timeout_seconds=timeout_seconds,
+                ),
+                subject=subject,
+                stage="labeler_review_group",
+            )
+            for group_id in group_ids
+        )
+    operations.append(
         _operation(
             _run_json_command(
-                (*control_prefix, *command), request=None, timeout_seconds=timeout_seconds
+                (
+                    *control_prefix,
+                    "export",
+                    labeler_project_id,
+                    "--page-index",
+                    index,
+                    "--regions-only",
+                    "--wait",
+                    "--timeout",
+                    timeout,
+                ),
+                request=None,
+                timeout_seconds=timeout_seconds,
             ),
             subject=subject,
-            stage=f"labeler_{command[0]}",
+            stage="labeler_export",
         )
-        for command in commands
     )
-    operations.append(
-        {
-            "subject": subject,
-            "stage": "labeler_review_group",
-            "argv": [],
-            "status": "blocked",
-            "payload": None,
-            "error": "inspect schema example is not published; no group ID or review body was invented",
-        }
+
+
+def _review_targets(operation: PublicOperation) -> tuple[str | None, int | None, tuple[str, ...]]:
+    payload = operation["payload"]
+    if payload is None:
+        return None, None, ()
+    generation = payload.get("generation")
+    result = payload.get("result")
+    if (
+        not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or not isinstance(result, dict)
+    ):
+        return None, None, ()
+    result_id = result.get("result_id")
+    groups = result.get("groups")
+    if not isinstance(result_id, str) or not isinstance(groups, list):
+        return None, None, ()
+    group_ids = tuple(
+        group_id
+        for group in groups
+        if isinstance(group, dict) and isinstance((group_id := group.get("group_id")), str)
     )
+    return result_id, generation, group_ids
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -763,6 +829,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--labeler-base-url", help="labeler HTTP base URL for the final proof")
     parser.add_argument("--labeler-control", type=Path, help="labeler JSON-control executable")
+    parser.add_argument(
+        "--review-decision",
+        choices=("pending", "accepted", "rejected", "edited"),
+        default="pending",
+        help="explicit non-destructive group-review decision",
+    )
     parser.add_argument(
         "--server-timeout-seconds",
         type=float,
@@ -835,6 +907,7 @@ def main(argv: list[str] | None = None) -> int:
                 labeler_control=args.labeler_control,
                 labeler_base_url=args.labeler_base_url,
                 timeout_seconds=args.server_timeout_seconds,
+                review_decision=args.review_decision,
             )
             report["integration"]["status"] = "public_commands_executed_review_schema_pending"
             _write_report(report, destination)

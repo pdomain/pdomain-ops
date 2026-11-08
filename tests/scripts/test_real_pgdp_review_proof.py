@@ -158,6 +158,11 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
             payload = {"project": {"project_id": "labeler-project"}}
         elif "page" in argv:
             payload = {"generation": 7}
+        elif "inspect" in argv:
+            payload = {
+                "generation": 7,
+                "result": {"result_id": "result-1", "groups": [{"group_id": "group-1"}]},
+            }
         else:
             payload = {"ok": True}
         return {
@@ -182,6 +187,7 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
         labeler_control=tmp_path / "control",
         labeler_base_url="http://127.0.0.1:8000",
         timeout_seconds=10.0,
+        review_decision="pending",
     )
 
     assert sum(operation["stage"] == "labeler_ocr" for operation in operations) == 2
@@ -190,7 +196,7 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
     assert sum(operation["stage"] == "labeler_export" for operation in operations) == 2
     assert sum(operation["stage"] == "labeler_review_group" for operation in operations) == 2
     assert all(
-        operation["status"] == "blocked"
+        operation["status"] == "ok"
         for operation in operations
         if operation["stage"] == "labeler_review_group"
     )
