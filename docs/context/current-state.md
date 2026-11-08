@@ -18,6 +18,7 @@ Kind: context
 
 ## Remaining work
 
+- Source tabs and page refresh fixes are installed locally in dev14. Consolidated GT previews P3 wording with supported F2 formatting, including mapped verse indents. P3 and F2 also have separate tabs. Working GT displays current corrections; word edits remain in Matches. Nine source pages and installed browser navigation/reload checks passed; unresolved formatting remains explicit. [Follow-up plan](../plans/2026-11-08-source-tabs-and-page-refresh.md)
 - Unified P3/F2 matching and API-driven review are built locally. A nine-page real-data workflow completed 152 public operations and preserved all 1,530 OCR words through review and reload. The installed build passed eight Chromium tests and the final nine-page proof, including true columns and single-column negative cases. Matching and formatting remain partial on several pages. [Implementation plan](../plans/2026-11-08-p3-f2-review-api.md). [API runbook](../runbooks/pgdp-api-review.md)
 - The predictor cache is still an unguarded check-then-set. [Concurrent OCR jobs can each build a duplicate DocTR predictor](../issues/2026-08-08-predictor-cache-not-thread-safe.md)
 - The CUDA probe still lets memory-query failures escape and marks queried CUDA devices available regardless of free memory. [The device probe raises instead of reporting when the GPU is full](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)

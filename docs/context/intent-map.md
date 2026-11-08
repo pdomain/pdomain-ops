@@ -50,6 +50,8 @@ maintenance obligation under `CONVENTIONS.md`; it is not a migration bet.
 
 ## Completed work
 
+- **Source text tabs and page refresh — completed locally, 2026-11-08.** Dev14 adds P3, F2 and read-only Consolidated GT with supported formatting and mapped verse indents. Working GT retains current corrections; edits remain in Matches. Nine source pages and installed browser checks passed, including all six tabs after navigation and an API reload resetting generation to zero. Unresolved formatting remains visible. See the [follow-up plan](../plans/2026-11-08-source-tabs-and-page-refresh.md).
+
 - **Real PGDP review and API-driven UI proof — complete locally.** Contracts,
   source-data, the labeler and ops support preparation, native OCR, grouped
   review, live browser control and structured export. The installed build

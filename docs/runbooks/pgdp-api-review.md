@@ -96,6 +96,24 @@ BOOK_PATH=$(jq -r '.result.book_path' /tmp/pgdp-prepare.json)
 
 Reuse a request ID only for the same logical request and identical inputs. A conflicting reuse fails. After an uncertain transport timeout, inspect the existing job or retry the same idempotent request instead of inventing a new ID.
 
+### Read source rounds before OCR
+
+The text tabs are Matches, Working GT, P3, F2, Consolidated GT and OCR. Working GT shows current corrections; edit individual words in Matches. F2 and P3 retain the prepared source transcription. Consolidated GT is a read-only preview of P3 wording with F2 formatting supported by accepted source-to-source matches. Unresolved formatting names the affected source text.
+
+Supported verse indents appear in the main consolidated transcript. Optional layout-line `grapheme_range` values identify half-open positions in P3 visible text; `indent_columns` records the mapped F2 indent. The UI checks exact line text and boundaries before applying any remaining indent. Source layout details stay collapsed by default.
+
+The source endpoint does not load OCR pages, start OCR jobs or change corrections:
+
+```bash
+PROJECT_ID=projectID64ff850152930
+"$CONTROL" --base-url "$BASE_URL" request GET \
+  "/api/projects/$PROJECT_ID/pages/1/source-text" > /tmp/pgdp-source-text.json
+jq '{page_key, available, warnings,
+     unresolved: .consolidated.unresolved}' /tmp/pgdp-source-text.json
+```
+
+API page indices are zero-based. A project without prepared F2/P3 snapshots returns `available: false`; its normal correction and OCR views remain usable. Source availability does not imply that every formatting span can be consolidated.
+
 ### Run OCR and inspect alignment
 
 API page indices are zero-based; the browser's `pageno` URL uses one-based page numbers. The prepared page order follows the original source order, even if the preparation request listed pages differently.
@@ -181,6 +199,8 @@ GENERATION=$(jq -r '.generation' /tmp/pgdp-page.json)
 ```
 
 The role edit above is appropriate only for a reviewed verse region. Other regions can use another role, a corrected `box`, or `layout_structure` through `--json`. Do not classify a region as poetry merely because its F2 source used `/* */`. Consult `/openapi.json` for those request bodies.
+
+Completed API page reloads refresh an open browser without a manual browser reload. Only a successful terminal response from `POST /api/projects/{project_id}/pages/{page_index}/load` publishes `page_changed.generation_reset: true`. Custom event consumers must cancel old page requests before resetting response ordering. Ordinary events retain their existing field shape, omit this marker and preserve generation ordering.
 
 Region-only exports write `labels.json` and `structure.json` under `<data_root>/doctr-export/<project_id>/all/regions/`. The job reports completion; these sidecars are separate from the full DocTR export-manifest listing. With the development server configured above, inspect the detailed output with:
 
