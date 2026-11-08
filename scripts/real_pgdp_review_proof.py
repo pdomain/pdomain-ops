@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
-"""Run bounded, auditable setup checks for the real PGDP review proof.
-
-The final proof deliberately waits for the separately-owned source bridge and
-labeler API.  This command still makes the nine-case corpus selection and its
-real Tesseract cache inspectable now, and writes a report that records every
-missing public dependency instead of substituting P3 for OCR.
-"""
+"""Run a bounded, auditable proof through the real PGDP review public APIs."""
 
 from __future__ import annotations
 
@@ -40,6 +34,8 @@ _WORD_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 
 ProofMode = Literal["describe", "validate-ocr", "proof"]
 ReviewDecision = Literal["pending", "accepted", "rejected", "edited"]
+CachedOcrValidation = Literal["not_requested", "validated", "unavailable"]
+DEFAULT_CASES_PATH = Path(__file__).resolve().parent / "fixtures" / "real-pgdp-review-cases.tsv"
 
 
 class CaseListError(ValueError):
@@ -118,6 +114,7 @@ class CaseReport(TypedDict):
     page_key: str
     intent: str
     status: str
+    cached_ocr_validation: CachedOcrValidation
     word_counts: WordCounts
     metrics: AlignmentMetrics
     blockers: list[str]
@@ -137,6 +134,9 @@ class ProofEvidence(TypedDict):
     reviewed_group_id: str | None
     reviewed_note: str | None
     reviewed_text: str | None
+    reviewed_region_proposal_id: str | None
+    reviewed_region_structure_kind: str | None
+    reviewed_region_structure_status: str
     region_count_after_reload: int | None
     proposal_count: int | None
     invariants: list[str]
@@ -234,15 +234,22 @@ def build_setup_report(
     *,
     cases: list[ProofCase],
     corpus_root: Path,
-    ocr_root: Path,
+    ocr_root: Path | None,
     mode: ProofMode,
     requested_case_count: int | None = None,
     cases_path: Path | None = None,
     invocation: str = "not recorded",
 ) -> SetupReport:
     """Inspect every requested real input without modifying the read-only corpus."""
+    require_cached_ocr = mode == "validate-ocr"
     reports = [
-        _inspect_case(case=case, corpus_root=corpus_root, ocr_root=ocr_root) for case in cases
+        _inspect_case(
+            case=case,
+            corpus_root=corpus_root,
+            ocr_root=ocr_root,
+            require_cached_ocr=require_cached_ocr,
+        )
+        for case in cases
     ]
     ready_count = sum(case["status"] == "setup_ready" for case in reports)
     failed_count = len(reports) - ready_count
@@ -257,14 +264,22 @@ def build_setup_report(
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": mode,
         "commands": {
-            "cached_ocr_origin": "OMP_THREAD_LIMIT=1 tesseract IMAGE stdout -l eng --psm 3 tsv",
+            "cached_ocr_origin": (
+                "OMP_THREAD_LIMIT=1 tesseract IMAGE stdout -l eng --psm 3 tsv"
+                if ocr_root is not None
+                else "not requested; proof invokes native labeler OCR"
+            ),
             "source_bridge": "PYTHON -m pdomain_source_data.pgdp_review_cli",
             "labeler_control": "pdomain-ocr-labeler-control --base-url URL",
             "invocation": invocation,
         },
         "input_sources": {
             "corpus_root": str(corpus_root),
-            "ocr_root": str(ocr_root),
+            "ocr_root": (
+                str(ocr_root)
+                if ocr_root is not None
+                else "not requested; native labeler OCR is primary"
+            ),
             "cases_tsv": str(cases_path) if cases_path is not None else "not supplied",
         },
         "input_identities": report_identities,
@@ -289,19 +304,29 @@ def build_setup_report(
     }
 
 
-def _inspect_case(*, case: ProofCase, corpus_root: Path, ocr_root: Path) -> CaseReport:
+def _inspect_case(
+    *,
+    case: ProofCase,
+    corpus_root: Path,
+    ocr_root: Path | None,
+    require_cached_ocr: bool,
+) -> CaseReport:
     project_root = corpus_root / case.project_id
     image_path = project_root / case.page_key
     f2_path = project_root / "rounds" / "F2.json"
     p3_path = project_root / "rounds" / "P3.json"
-    ocr_path = ocr_root / case.ocr_filename
     blockers: list[str] = []
     identities: dict[str, FileIdentity] = {}
     f2_text = _page_text(f2_path, case.page_key, "F2", blockers, identities)
     p3_text = _page_text(p3_path, case.page_key, "P3", blockers, identities)
     _record_identity("scan", image_path, blockers, identities)
-    ocr_words = _ocr_word_count(ocr_path, blockers, identities)
-    if f2_text is None or p3_text is None or ocr_words is None:
+    ocr_words: int | None = None
+    if ocr_root is None:
+        cache_validation: CachedOcrValidation = "not_requested"
+    else:
+        ocr_words = _ocr_word_count(ocr_root / case.ocr_filename, blockers, identities)
+        cache_validation = "validated" if ocr_words is not None else "unavailable"
+    if f2_text is None or p3_text is None or (require_cached_ocr and ocr_words is None):
         status = "setup_failed"
     else:
         status = "setup_ready"
@@ -316,6 +341,7 @@ def _inspect_case(*, case: ProofCase, corpus_root: Path, ocr_root: Path) -> Case
         "page_key": case.page_key,
         "intent": case.intent,
         "status": status,
+        "cached_ocr_validation": cache_validation,
         "word_counts": {
             "f2_raw": _count_words(f2_text),
             "p3": _count_words(p3_text),
@@ -350,6 +376,9 @@ def _inspect_case(*, case: ProofCase, corpus_root: Path, ocr_root: Path) -> Case
             "reviewed_group_id": None,
             "reviewed_note": None,
             "reviewed_text": None,
+            "reviewed_region_proposal_id": None,
+            "reviewed_region_structure_kind": None,
+            "reviewed_region_structure_status": "not_run",
             "region_count_after_reload": None,
             "proposal_count": None,
             "invariants": [],
@@ -946,16 +975,51 @@ def _run_region_review_sequence(
         stage="labeler_proposals",
     )
     operations.append(proposals)
-    proposal_id = _first_proposal_id(proposals)
-    if proposal_id is None:
+    target = _region_review_target(proposals)
+    if target is None:
+        region_review: PublicOperation = {
+            "subject": subject,
+            "stage": "labeler_region_review",
+            "argv": [],
+            "status": "ok",
+            "payload": proposals["payload"],
+            "error": "no genuine region proposal was returned",
+        }
+    else:
+        command = (
+            *control_prefix,
+            "region-review",
+            labeler_project_id,
+            index,
+            target.proposal_id,
+            "accept",
+        )
+        if target.layout_structure is not None:
+            command = (
+                *command,
+                "--json",
+                json.dumps({"layout_structure": target.layout_structure}),
+            )
+        region_review = _operation(
+            _run_json_command(
+                command,
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=subject,
+            stage="labeler_region_review",
+        )
+    operations.append(region_review)
+    region_generation = _payload_integer(region_review, "generation")
+    if region_generation is None:
         operations.append(
             {
                 "subject": subject,
-                "stage": "labeler_region_review",
+                "stage": "labeler_save_after_region_review",
                 "argv": [],
-                "status": "ok",
-                "payload": proposals["payload"],
-                "error": "no genuine region proposal was returned",
+                "status": "blocked",
+                "payload": region_review["payload"],
+                "error": "region review response has no published generation field",
             }
         )
     else:
@@ -964,17 +1028,17 @@ def _run_region_review_sequence(
                 _run_json_command(
                     (
                         *control_prefix,
-                        "region-review",
+                        "save",
                         labeler_project_id,
                         index,
-                        proposal_id,
-                        "accept",
+                        "--generation",
+                        str(region_generation),
                     ),
                     request=None,
                     timeout_seconds=timeout_seconds,
                 ),
                 subject=subject,
-                stage="labeler_region_review",
+                stage="labeler_save_after_region_review",
             )
         )
     operations.append(
@@ -1028,19 +1092,42 @@ def _run_region_review_sequence(
     )
 
 
-def _first_proposal_id(operation: PublicOperation) -> str | None:
+@dataclass(frozen=True, slots=True)
+class RegionReviewTarget:
+    """One published proposal selected for a bounded reviewed-region operation."""
+
+    proposal_id: str
+    layout_structure: dict[str, object] | None
+
+
+def _region_review_target(operation: PublicOperation) -> RegionReviewTarget | None:
+    """Prefer a proposal with published structure evidence over a generic box."""
     payload = operation["payload"]
     if payload is None:
         return None
     proposals = payload.get("proposals")
     if not isinstance(proposals, list):
         return None
+    generic_target: RegionReviewTarget | None = None
     for proposal in proposals:
-        if isinstance(proposal, dict):
-            proposal_id = proposal.get("proposal_id")
-            if isinstance(proposal_id, str):
-                return proposal_id
-    return None
+        if not isinstance(proposal, dict) or not isinstance(
+            (proposal_id := proposal.get("proposal_id")), str
+        ):
+            continue
+        structure = _proposal_layout_structure(proposal)
+        if structure is not None:
+            return RegionReviewTarget(proposal_id=proposal_id, layout_structure=structure)
+        if generic_target is None:
+            generic_target = RegionReviewTarget(proposal_id=proposal_id, layout_structure=None)
+    return generic_target
+
+
+def _proposal_layout_structure(proposal: dict[str, object]) -> dict[str, object] | None:
+    evidence = proposal.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    layout_structure = evidence.get("layout_structure")
+    return layout_structure if isinstance(layout_structure, dict) else None
 
 
 def public_proof_complete(*, cases: list[ProofCase], operations: list[PublicOperation]) -> bool:
@@ -1057,6 +1144,7 @@ def public_proof_complete(*, cases: list[ProofCase], operations: list[PublicOper
         "labeler_inspect_after_reload",
         "labeler_proposals",
         "labeler_region_review",
+        "labeler_save_after_region_review",
         "labeler_reload_after_region_review",
         "labeler_page_after_region_review",
         "labeler_export",
@@ -1086,6 +1174,8 @@ def populate_proof_evidence(
         before_inspect = _operation_payload(operations, subject, "labeler_inspect")
         after_inspect = _operation_payload(operations, subject, "labeler_inspect_after_reload")
         proposals = _operation_payload(operations, subject, "labeler_proposals")
+        region_review = _operation_for(operations, subject, "labeler_region_review")
+        region_export = _operation_for(operations, subject, "labeler_export")
         evidence = case_report["proof_evidence"]
         before_ocr, before_gt = _page_texts(before_page)
         after_ocr, after_gt = _page_texts(after_page)
@@ -1102,7 +1192,35 @@ def populate_proof_evidence(
             invariants.append("alignment_group_order_boxes_source_ids_preserved")
         if reviewed is not None and reviewed[4] is not None:
             invariants.append("edited_group_note_and_reviewed_text_survived_reload")
-        evidence["status"] = "verified" if len(invariants) == 4 else "invariants_incomplete"
+        proposal_id, requested_structure_kind = _region_review_request(region_review)
+        returned_structure_kind = _region_structure_kind(region_review, proposal_id)
+        persisted_structure_kind = _region_structure_kind_for_proposal(after_page, proposal_id)
+        if requested_structure_kind is None:
+            structure_status = "not_requested"
+        elif (
+            returned_structure_kind == requested_structure_kind
+            and persisted_structure_kind == requested_structure_kind
+            and region_export is not None
+            and region_export["status"] == "ok"
+        ):
+            structure_status = "verified"
+            invariants.append("reviewed_region_structure_returned_persisted_and_exported")
+        else:
+            structure_status = "incomplete"
+        base_invariants_complete = all(
+            invariant in invariants
+            for invariant in (
+                "raw_ocr_text_preserved",
+                "ground_truth_text_preserved",
+                "alignment_group_order_boxes_source_ids_preserved",
+                "edited_group_note_and_reviewed_text_survived_reload",
+            )
+        )
+        evidence["status"] = (
+            "verified"
+            if base_invariants_complete and structure_status in {"not_requested", "verified"}
+            else "invariants_incomplete"
+        )
         evidence["raw_ocr_text"] = before_ocr
         evidence["ground_truth_text"] = before_gt
         evidence["raw_ocr_token_count"] = len(before_groups)
@@ -1111,6 +1229,9 @@ def populate_proof_evidence(
         evidence["reviewed_group_id"] = reviewed[0] if reviewed is not None else None
         evidence["reviewed_note"] = reviewed[3] if reviewed is not None else None
         evidence["reviewed_text"] = reviewed[4] if reviewed is not None else None
+        evidence["reviewed_region_proposal_id"] = proposal_id
+        evidence["reviewed_region_structure_kind"] = requested_structure_kind
+        evidence["reviewed_region_structure_status"] = structure_status
         evidence["region_count_after_reload"] = _list_length(after_page, "regions")
         evidence["proposal_count"] = _list_length(proposals, "proposals")
         evidence["invariants"] = invariants
@@ -1126,6 +1247,65 @@ def _operation_payload(
     for operation in reversed(operations):
         if operation["subject"] == subject and operation["stage"] == stage:
             return operation["payload"]
+    return None
+
+
+def _operation_for(
+    operations: list[PublicOperation], subject: str, stage: str
+) -> PublicOperation | None:
+    for operation in reversed(operations):
+        if operation["subject"] == subject and operation["stage"] == stage:
+            return operation
+    return None
+
+
+def _region_review_request(operation: PublicOperation | None) -> tuple[str | None, str | None]:
+    if operation is None:
+        return None, None
+    try:
+        command_index = operation["argv"].index("region-review")
+    except ValueError:
+        return None, None
+    proposal_index = command_index + 3
+    if proposal_index >= len(operation["argv"]):
+        return None, None
+    proposal_id = operation["argv"][proposal_index]
+    try:
+        body_index = operation["argv"].index("--json")
+        body = json.loads(operation["argv"][body_index + 1])
+    except (IndexError, ValueError, json.JSONDecodeError):
+        return proposal_id, None
+    if not isinstance(body, dict) or not isinstance(
+        (structure := body.get("layout_structure")), dict
+    ):
+        return proposal_id, None
+    kind = structure.get("kind")
+    return proposal_id, kind if isinstance(kind, str) else None
+
+
+def _region_structure_kind(
+    operation: PublicOperation | None, proposal_id: str | None
+) -> str | None:
+    return _region_structure_kind_for_proposal(
+        operation["payload"] if operation is not None else None, proposal_id
+    )
+
+
+def _region_structure_kind_for_proposal(
+    payload: dict[str, object] | None, proposal_id: str | None
+) -> str | None:
+    if (
+        proposal_id is None
+        or payload is None
+        or not isinstance((regions := payload.get("regions")), list)
+    ):
+        return None
+    for region in regions:
+        if not isinstance(region, dict) or region.get("proposal_id") != proposal_id:
+            continue
+        structure = region.get("layout_structure")
+        if isinstance(structure, dict) and isinstance((kind := structure.get("kind")), str):
+            return kind
     return None
 
 
@@ -1515,7 +1695,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cases",
         type=Path,
-        default=Path("cases.tsv"),
+        default=DEFAULT_CASES_PATH,
         help="TSV with project ID, page key, and intended behavior",
     )
     parser.add_argument(
@@ -1527,8 +1707,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ocr-root",
         type=Path,
-        default=Path("artifacts/ocr"),
-        help="directory containing real Tesseract TSV cache artifacts",
+        help="optional real Tesseract TSV cache; required only for --mode validate-ocr",
     )
     parser.add_argument(
         "--output-dir",
@@ -1599,6 +1778,19 @@ def main(argv: list[str] | None = None) -> int:
     destination = args.json_report or args.output_dir / "real-pgdp-review-proof.json"
     invocation_args = sys.argv[1:] if argv is None else argv
     invocation = shlex.join([sys.argv[0], *invocation_args])
+    if mode == "validate-ocr" and args.ocr_root is None:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "cached_ocr_required",
+                        "message": "--mode validate-ocr requires an explicit --ocr-root",
+                    },
+                }
+            )
+        )
+        return 2
     try:
         requested_cases = load_cases(args.cases, case_limit=None, allow_partial=False)
         cases = load_cases(args.cases, case_limit=args.case_limit, allow_partial=args.allow_partial)

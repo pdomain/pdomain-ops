@@ -9,6 +9,7 @@ import pytest
 
 from scripts import real_pgdp_review_proof as proof
 from scripts.real_pgdp_review_proof import (
+    DEFAULT_CASES_PATH,
     CaseListError,
     OcrTsvError,
     build_setup_report,
@@ -45,6 +46,17 @@ def test_load_cases_rejects_implicit_partial_selection(tmp_path: Path) -> None:
 
     with pytest.raises(CaseListError, match="allow-partial"):
         load_cases(cases_file, case_limit=1, allow_partial=False)
+
+
+def test_default_cases_fixture_does_not_depend_on_the_current_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    parsed = proof._parser().parse_args([])
+
+    assert parsed.cases == DEFAULT_CASES_PATH
+    assert load_cases(parsed.cases, case_limit=None, allow_partial=False)
 
 
 def test_parse_ocr_tsv_counts_only_nonempty_word_rows(tmp_path: Path) -> None:
@@ -110,6 +122,31 @@ def test_build_setup_report_preserves_failed_case_and_real_counts(tmp_path: Path
     assert report["commands"]["invocation"] == "real_pgdp_review_proof.py --mode validate-ocr"
 
 
+def test_proof_setup_keeps_native_ocr_primary_when_cache_is_not_requested(tmp_path: Path) -> None:
+    corpus_root = tmp_path / "corpus"
+    project_root = corpus_root / "projectIDone"
+    rounds_root = project_root / "rounds"
+    rounds_root.mkdir(parents=True)
+    (project_root / "008.png").write_bytes(b"real-scan-placeholder")
+    (rounds_root / "F2.json").write_text(json.dumps({"008.png": "F2 source"}), encoding="utf-8")
+    (rounds_root / "P3.json").write_text(json.dumps({"008.png": "P3 source"}), encoding="utf-8")
+    cases_file = tmp_path / "cases.tsv"
+    cases_file.write_text("projectIDone\t008.png\tverse_indent\n", encoding="utf-8")
+
+    report = build_setup_report(
+        cases=load_cases(cases_file, case_limit=None, allow_partial=False),
+        corpus_root=corpus_root,
+        ocr_root=None,
+        mode="proof",
+        cases_path=cases_file,
+    )
+
+    assert report["summary"]["setup_failed_count"] == 0
+    assert report["input_sources"]["ocr_root"] == "not requested; native labeler OCR is primary"
+    assert report["cases"][0]["cached_ocr_validation"] == "not_requested"
+    assert report["cases"][0]["word_counts"]["ocr"] is None
+
+
 def test_proof_mode_returns_one_blocked_machine_result(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -139,6 +176,16 @@ def test_proof_mode_returns_one_blocked_machine_result(
     assert payload["report"] == str(report_path)
 
 
+def test_validate_ocr_requires_an_explicit_cache_root(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = main(["--mode", "validate-ocr", "--json-report", str(tmp_path / "report.json")])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 2
+    assert payload["error"]["code"] == "cached_ocr_required"
+
+
 def test_public_proof_sequences_each_page_without_inventing_review_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -166,6 +213,10 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
                     "groups": [{"group_id": "group-1", "ocr_text": "Alpha"}],
                 },
             }
+        elif "proposals" in argv:
+            payload = {"proposals": [{"proposal_id": "proposal-1", "role": "paragraph"}]}
+        elif "region-review" in argv:
+            payload = {"generation": 8}
         else:
             payload = {"ok": True}
         return {
@@ -209,6 +260,15 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
     assert all("--generation" in command and "7" in command for command in align_commands)
     assert sum(operation["stage"] == "labeler_proposals" for operation in operations) == 2
     assert sum(operation["stage"] == "labeler_region_review" for operation in operations) == 2
+    assert (
+        sum(operation["stage"] == "labeler_save_after_region_review" for operation in operations)
+        == 2
+    )
+    assert all(
+        operation["status"] == "ok"
+        for operation in operations
+        if operation["stage"] == "labeler_save_after_region_review"
+    )
     prepare_requests = [
         request for _, request in calls if request is not None and request["command"] == "prepare"
     ]
@@ -276,6 +336,121 @@ def test_public_proof_confirms_working_copy_page_kinds_before_proposals(
         "pages": [{"page_index": 0, "kind": "contents"}],
         "note": "Algorithm review for real PGDP proof working copy",
     }
+
+
+def test_public_proof_prefers_a_structured_proposal_for_region_review(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    requests: list[tuple[str, ...]] = []
+
+    def run_command(
+        argv: tuple[str, ...], *, request: dict[str, object] | None, timeout_seconds: float
+    ) -> proof.PublicOperation:
+        del request, timeout_seconds
+        requests.append(argv)
+        payload: dict[str, object] = {"ok": True, "result": {"book_path": "/prepared/book"}}
+        if "load" in argv:
+            payload = {"project": {"project_id": "labeler-project"}}
+        elif "page" in argv:
+            payload = {"generation": 7}
+        elif "inspect" in argv:
+            payload = {
+                "generation": 7,
+                "result": {
+                    "result_id": "result-1",
+                    "groups": [{"group_id": "group-1", "ocr_text": "Alpha"}],
+                },
+            }
+        elif "proposals" in argv:
+            payload = {
+                "proposals": [
+                    {"proposal_id": "plain-proposal", "role": "paragraph"},
+                    {
+                        "proposal_id": "column-proposal",
+                        "role": "paragraph",
+                        "evidence": {
+                            "layout_structure": {
+                                "kind": "column_flow",
+                                "column_group_id": "columns-1",
+                                "column_index": 0,
+                                "reading_order": 0,
+                            }
+                        },
+                    },
+                ]
+            }
+        return {
+            "subject": "",
+            "stage": "",
+            "argv": list(argv),
+            "status": "ok",
+            "payload": payload,
+            "error": None,
+        }
+
+    monkeypatch.setattr(proof, "_run_json_command", run_command)
+    proof.run_public_proof(
+        cases=[proof.ProofCase("projectIDone", "008.png", "verse_indent")],
+        corpus_root=tmp_path / "corpus",
+        source_python=tmp_path / "python",
+        source_module="pdomain_source_data.pgdp_review_cli",
+        source_output_root=tmp_path / "prepared",
+        labeler_control=tmp_path / "control",
+        labeler_base_url="http://127.0.0.1:8000",
+        timeout_seconds=10.0,
+        review_decision="edited",
+    )
+
+    region_review = next(argv for argv in requests if "region-review" in argv)
+    assert "column-proposal" in region_review
+    body = json.loads(region_review[region_review.index("--json") + 1])
+    assert body == {
+        "layout_structure": {
+            "kind": "column_flow",
+            "column_group_id": "columns-1",
+            "column_index": 0,
+            "reading_order": 0,
+        }
+    }
+
+
+def test_region_review_structure_evidence_requires_a_matching_reloaded_region() -> None:
+    operation: proof.PublicOperation = {
+        "subject": "project/008.png",
+        "stage": "labeler_region_review",
+        "argv": [
+            "control",
+            "region-review",
+            "labeler-project",
+            "0",
+            "proposal-1",
+            "accept",
+            "--json",
+            '{"layout_structure":{"kind":"poetry","lines":[]}}',
+        ],
+        "status": "ok",
+        "payload": {
+            "regions": [
+                {
+                    "proposal_id": "proposal-1",
+                    "layout_structure": {"kind": "poetry"},
+                }
+            ]
+        },
+        "error": None,
+    }
+
+    proposal_id, requested_kind = proof._region_review_request(operation)
+
+    assert (proposal_id, requested_kind) == ("proposal-1", "poetry")
+    assert proof._region_structure_kind(operation, proposal_id) == "poetry"
+    assert (
+        proof._region_structure_kind_for_proposal(
+            {"regions": [{"proposal_id": "proposal-1", "layout_structure": {"kind": "poetry"}}]},
+            proposal_id,
+        )
+        == "poetry"
+    )
 
 
 def test_public_proof_does_not_propose_regions_after_page_kind_confirmation_failure(
