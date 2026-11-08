@@ -18,6 +18,7 @@ Kind: context
 
 ## Remaining work
 
+- Unified P3/F2 matching and API-driven review are built locally. A nine-page real-data workflow completed 152 public operations and preserved all 1,530 OCR words through review and reload. The installed build passed eight Chromium tests and the final nine-page proof, including true columns and single-column negative cases. Matching and formatting remain partial on several pages. [Implementation plan](../plans/2026-11-08-p3-f2-review-api.md). [API runbook](../runbooks/pgdp-api-review.md)
 - The predictor cache is still an unguarded check-then-set. [Concurrent OCR jobs can each build a duplicate DocTR predictor](../issues/2026-08-08-predictor-cache-not-thread-safe.md)
 - The CUDA probe still lets memory-query failures escape and marks queried CUDA devices available regardless of free memory. [The device probe raises instead of reporting when the GPU is full](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
 - Weekly dep-refresh auto-land is still open. Commit `7ff9c7d` removed the GitHub workflows. Branch protection on master is off. Thirteen `dep-refresh/*` branches remain on origin. Closing the issue needs an owner decision. [Weekly dep-refresh cannot auto-land in this repo](../issues/2026-08-08-dep-refresh-cannot-auto-land.md)
@@ -42,6 +43,18 @@ and the source-data, labeler, and training consumers require `>=0.2.1` and insta
 that release through their normal lockfiles. Normal consumer checks passed,
 including all four labeler Docker tests and eight Chromium checks against the
 published dependency. [Verified rollout](../plans/2026-11-07-f2-and-gutenberg-layout-regions.md#rollout-outcome)
+
+The newer P3/F2/API work is separate local development. Contracts owns bounded
+matching and grouped projection. Source-data owns catalog and selected-book
+preparation. The labeler owns jobs, review, JSON controls, and viewer updates.
+Ops owns the repeatable real-data harness. The installed local source wheel
+prepares all nine pages. Real structured exports preserve verse word IDs and
+two separate paragraph columns. API-driven browser checks cover two tabs,
+reconnect, stale acknowledgements, and visible review changes without reload.
+These checks establish bounded workflow coverage. They do not establish
+full-corpus annotation quality or a trained model. The new contracts APIs
+require the reviewed local wheel; the published `v0.2.1` release does not
+contain them.
 
 Deferred, blocked, and rejected bets stay in the [intent map](intent-map.md).
 

@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-11-07
+Last verified: 2026-11-08
 Kind: context
 ---
 
@@ -12,17 +12,20 @@ Kind: context
 
 - **Kind:** context
 - **Status:** active
-- **Last verified:** 2026-11-07
+- **Last verified:** 2026-11-08
 - **Read when:** deciding what work remains active, deferred, rejected, or blocked.
 - **Search terms:** intent, deferred work, rejected direction, owner decision.
 
-Current work stays limited to isolated ebook sessions and evidence-backed
-page-model adoption. All other items are completed, deferred, rejected,
-blocked, or need an owner decision.
+Active work covers isolated ebook sessions, evidence-backed page-model
+adoption. The local PGDP review proof is complete. All other items are
+completed, deferred, rejected, blocked, or need an owner decision.
 
 The 2026-11-07 verification checked local source, tests, and the open-work
 links. External infrastructure and historical cross-repository decisions below
 remain scoped to their recorded evidence; this date does not revalidate them.
+
+The 2026-11-08 update verifies only the new PGDP review work and its measured
+outcomes. Other entries retain their recorded evidence dates.
 
 ## Active bets
 
@@ -46,6 +49,14 @@ The [lint-deviation catalog](../process/lint-deviations.md) remains a standing
 maintenance obligation under `CONVENTIONS.md`; it is not a migration bet.
 
 ## Completed work
+
+- **Real PGDP review and API-driven UI proof — complete locally.** Contracts,
+  source-data, the labeler and ops support preparation, native OCR, grouped
+  review, live browser control and structured export. The installed build
+  completed 152 public operations on nine real pages and passed eight Chromium
+  tests. Column negatives and paired-column persistence are verified; two
+  verse cases remain partial. See the [P3/F2 plan](../plans/2026-11-08-p3-f2-review-api.md).
+  Full-corpus quality, model training and publication remain outside this proof.
 
 - **Clear the basedpyright strict backlog — done.** All 33 baseline diagnostics
   are fixed and the baseline file is deleted. Evidence: commit `f09d2b7` and the
