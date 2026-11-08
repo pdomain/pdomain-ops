@@ -333,3 +333,85 @@ def test_public_proof_does_not_propose_regions_after_page_kind_confirmation_fail
 
 def test_public_proof_rejects_an_empty_all_pass_operation_list() -> None:
     assert proof.public_proof_complete(cases=[], operations=[]) is False
+
+
+def test_semantic_observations_do_not_pass_empty_or_null_evidence() -> None:
+    numeric = proof._behavior_observations(
+        proof.ProofCase("project", "07.png", "numeric_tables"),
+        {"layout_hints": [{"kind": "poetry"}], "regions": []},
+        None,
+        {"proposals": []},
+    )
+    formatter = proof._behavior_observations(
+        proof.ProofCase("project", "026.png", "formatter_comments_tb"),
+        {"page_text_ocr": "plain scan"},
+        {
+            "result": {
+                "f2": {
+                    "visible_text": "source <tb> marker",
+                    "document": {"pages": []},
+                }
+            }
+        },
+        {"proposals": [{"role": "paragraph"}]},
+    )
+    verse = proof._behavior_observations(
+        proof.ProofCase("project", "009.png", "verse_stanzas_case"),
+        {
+            "layout_hints": [{"lines": [{"stanza_index": None, "indent_hint": None}]}],
+            "regions": [],
+        },
+        {"result": {"projection": {"unresolved": ["missing"]}}},
+        {"proposals": [{"role": "poetry", "evidence": {"alignment_group_ids": []}}]},
+    )
+
+    assert numeric["not_poetry"] == "missing_proposal"
+    assert formatter["formatter_or_tb_visible"] == "mismatch"
+    assert verse["verse_stanzas_or_indents"] == "partial_unresolved"
+
+
+def test_alignment_metrics_count_changed_groups_and_linked_relations() -> None:
+    metrics: proof.AlignmentMetrics = {
+        "f2_to_p3_mapped": None,
+        "p3_to_ocr_mapped": None,
+        "unresolved": None,
+        "style_projection": None,
+        "split_join_groups": None,
+        "disagreements": None,
+        "timing_ms": None,
+        "group_dispositions": None,
+        "projected_hints": None,
+        "unresolved_hints": None,
+        "ocr_token_count": None,
+        "split_relations": None,
+        "join_relations": None,
+        "accepted_groups": None,
+        "alignment_warning_count": None,
+    }
+    payload: dict[str, object] = {
+        "result": {
+            "groups": [
+                {"disposition": "accepted"},
+                {"disposition": "changed"},
+                {"disposition": "changed"},
+            ],
+            "alignment": {
+                "warnings": ["boilerplate"],
+                "f2_to_p3": {
+                    "best_alternative": {
+                        "relations": [
+                            {"source_token_ids": ["f2"], "target_token_ids": ["p3"]},
+                            {"source_token_ids": ["f2"], "target_token_ids": []},
+                        ]
+                    }
+                },
+                "p3_to_ocr": {"best_alternative": {"relations": []}},
+            },
+            "projection": {"layout_hints": [], "style_spans": [], "unresolved": []},
+        }
+    }
+
+    proof._populate_metrics(metrics, payload, [])
+
+    assert metrics["disagreements"] == 2
+    assert metrics["f2_to_p3_mapped"] == 1

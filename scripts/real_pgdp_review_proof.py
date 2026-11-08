@@ -88,6 +88,8 @@ class AlignmentMetrics(TypedDict):
     ocr_token_count: int | None
     split_relations: int | None
     join_relations: int | None
+    accepted_groups: int | None
+    alignment_warning_count: int | None
 
 
 class FileIdentity(TypedDict):
@@ -333,6 +335,8 @@ def _inspect_case(*, case: ProofCase, corpus_root: Path, ocr_root: Path) -> Case
             "ocr_token_count": None,
             "split_relations": None,
             "join_relations": None,
+            "accepted_groups": None,
+            "alignment_warning_count": None,
         },
         "blockers": blockers,
         "input_identities": identities,
@@ -1216,14 +1220,17 @@ def _populate_metrics(
     if isinstance(alignment, dict):
         metrics["f2_to_p3_mapped"] = _mapping_count(alignment.get("f2_to_p3"))
         metrics["p3_to_ocr_mapped"] = _mapping_count(alignment.get("p3_to_ocr"))
-        metrics["disagreements"] = _list_value_length(alignment.get("warnings"))
+        metrics["alignment_warning_count"] = _list_value_length(alignment.get("warnings"))
         metrics["timing_ms"] = _timing_ms(alignment.get("timing"))
     if isinstance(projection, dict):
         metrics["projected_hints"] = _value_count(projection.get("layout_hints"))
         metrics["style_projection"] = _value_count(projection.get("style_spans"))
         metrics["unresolved_hints"] = _value_count(projection.get("unresolved"))
         metrics["unresolved"] = metrics["unresolved_hints"]
-    metrics["group_dispositions"] = _group_dispositions(payload)
+    dispositions = _group_dispositions(payload)
+    metrics["group_dispositions"] = dispositions
+    metrics["accepted_groups"] = dispositions.get("accepted", 0)
+    metrics["disagreements"] = dispositions.get("changed", 0)
     metrics["ocr_token_count"] = len(groups)
     split_count, join_count = _relation_counts(alignment)
     metrics["split_relations"] = split_count
@@ -1276,7 +1283,19 @@ def _mapping_count(value: object) -> int | None:
     if not isinstance(alternative, dict):
         return 0
     relations = alternative.get("relations")
-    return len(relations) if isinstance(relations, list) else 0
+    if not isinstance(relations, list):
+        return 0
+    return sum(
+        1
+        for relation in relations
+        if isinstance(relation, dict)
+        and _nonempty_string_list(relation.get("source_token_ids"))
+        and _nonempty_string_list(relation.get("target_token_ids"))
+    )
+
+
+def _nonempty_string_list(value: object) -> bool:
+    return isinstance(value, list) and any(isinstance(item, str) and item for item in value)
 
 
 def _integer_value(value: object) -> int | None:
@@ -1311,25 +1330,37 @@ def _behavior_observations(
     inspect: dict[str, object] | None,
     proposals: dict[str, object] | None,
 ) -> dict[str, str]:
-    ocr, _ground_truth = _page_texts(page)
     observations: dict[str, str] = {}
-    hints = _page_layout_hints(page)
+    proposal_records = _proposal_records(proposals)
+    proposal_roles = _record_roles(proposal_records)
+    confirmed_roles = _confirmed_region_roles(page)
     if case.intent == "numeric_tables":
-        observations["not_poetry"] = (
-            "verified" if not any("verse" in hint for hint in hints) else "mismatch"
-        )
+        if not proposal_records:
+            observations["not_poetry"] = "missing_proposal"
+        elif "poetry" in proposal_roles or "poetry" in confirmed_roles:
+            observations["not_poetry"] = "mismatch"
+        else:
+            observations["not_poetry"] = "verified"
     if case.intent == "formatter_comments_tb":
-        observations["formatter_or_tb_visible"] = (
-            "mismatch"
-            if ocr is not None and ("/*" in ocr or "*/" in ocr or "<tb>" in ocr.casefold())
-            else "verified"
-        )
+        source_text = _source_visible_text(inspect)
+        if source_text is None:
+            observations["formatter_or_tb_visible"] = "incomplete_source_evidence"
+        elif _contains_source_markup(source_text):
+            observations["formatter_or_tb_visible"] = "mismatch"
+        else:
+            observations["formatter_or_tb_visible"] = "verified"
     if case.intent.startswith("verse"):
-        observations["verse_stanzas_or_indents"] = (
-            "verified"
-            if any("stanza" in hint or "indent" in hint for hint in hints)
-            else "genuine_mismatch"
-        )
+        metadata_present = _has_nonempty_verse_metadata(page)
+        poetry_sources_present = _poetry_proposal_has_sources(proposal_records)
+        unresolved = _unresolved_layout_count(inspect)
+        if not proposal_records:
+            observations["verse_stanzas_or_indents"] = "missing_proposal"
+        elif metadata_present and poetry_sources_present and unresolved == 0:
+            observations["verse_stanzas_or_indents"] = "verified"
+        elif metadata_present or poetry_sources_present or unresolved > 0:
+            observations["verse_stanzas_or_indents"] = "partial_unresolved"
+        else:
+            observations["verse_stanzas_or_indents"] = "genuine_mismatch"
     if case.intent == "physical_columns_captions":
         proposal_count = _list_length(proposals, "proposals")
         column_pairs = _column_pairs(page)
@@ -1340,6 +1371,100 @@ def _behavior_observations(
         else:
             observations["independent_columns"] = "genuine_mismatch"
     return observations
+
+
+def _proposal_records(payload: dict[str, object] | None) -> list[dict[str, object]]:
+    if payload is None or not isinstance((proposals := payload.get("proposals")), list):
+        return []
+    return [proposal for proposal in proposals if isinstance(proposal, dict)]
+
+
+def _record_roles(records: list[dict[str, object]]) -> set[str]:
+    return {role for record in records if isinstance((role := record.get("role")), str)}
+
+
+def _confirmed_region_roles(payload: dict[str, object] | None) -> set[str]:
+    if payload is None or not isinstance((regions := payload.get("regions")), list):
+        return set()
+    return {
+        role
+        for region in regions
+        if isinstance(region, dict)
+        and region.get("confirmed") is True
+        and isinstance((role := region.get("role")), str)
+    }
+
+
+def _source_visible_text(payload: dict[str, object] | None) -> str | None:
+    if payload is None or not isinstance((result := payload.get("result")), dict):
+        return None
+    f2 = result.get("f2")
+    if not isinstance(f2, dict):
+        return None
+    visible_text = f2.get("visible_text")
+    if not isinstance(visible_text, str):
+        return None
+    token_texts: list[str] = []
+    document = f2.get("document")
+    if isinstance(document, dict) and isinstance((pages := document.get("pages")), list):
+        for page in pages:
+            if not isinstance(page, dict) or not isinstance((lines := page.get("lines")), list):
+                continue
+            for line in lines:
+                if not isinstance(line, dict) or not isinstance(
+                    (tokens := line.get("tokens")), list
+                ):
+                    continue
+                token_texts.extend(
+                    text
+                    for token in tokens
+                    if isinstance(token, dict) and isinstance((text := token.get("text")), str)
+                )
+    return "\n".join((visible_text, *token_texts))
+
+
+def _contains_source_markup(text: str) -> bool:
+    lowered = text.casefold()
+    return any(marker in lowered for marker in ("<tb", "[**", "**]", "/*", "*/"))
+
+
+def _has_nonempty_verse_metadata(payload: dict[str, object] | None) -> bool:
+    if payload is None or not isinstance((hints := payload.get("layout_hints")), list):
+        return False
+    for hint in hints:
+        if not isinstance(hint, dict) or not isinstance((lines := hint.get("lines")), list):
+            continue
+        for line in lines:
+            if not isinstance(line, dict):
+                continue
+            stanza = line.get("stanza_index")
+            indent = line.get("indent_hint")
+            if (isinstance(stanza, int) and not isinstance(stanza, bool)) or (
+                isinstance(indent, str) and indent.strip()
+            ):
+                return True
+    return False
+
+
+def _poetry_proposal_has_sources(records: list[dict[str, object]]) -> bool:
+    for record in records:
+        if record.get("role") != "poetry":
+            continue
+        evidence = record.get("evidence")
+        if isinstance(evidence, dict) and _nonempty_string_list(
+            evidence.get("alignment_group_ids")
+        ):
+            return True
+    return False
+
+
+def _unresolved_layout_count(payload: dict[str, object] | None) -> int:
+    if payload is None or not isinstance((result := payload.get("result")), dict):
+        return 0
+    projection = result.get("projection")
+    if not isinstance(projection, dict):
+        return 0
+    return _value_count(projection.get("unresolved")) or 0
 
 
 def _page_layout_hints(payload: dict[str, object] | None) -> list[str]:
