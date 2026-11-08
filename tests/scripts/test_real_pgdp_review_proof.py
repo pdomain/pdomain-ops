@@ -666,6 +666,7 @@ def test_alignment_metrics_count_changed_groups_and_linked_relations() -> None:
                 {"disposition": "changed"},
                 {"disposition": "changed"},
             ],
+            "ocr": {"ocr_words": [{}, {}, {}, {}, {}]},
             "alignment": {
                 "warnings": ["boilerplate"],
                 "f2_to_p3": {
@@ -682,7 +683,8 @@ def test_alignment_metrics_count_changed_groups_and_linked_relations() -> None:
         }
     }
 
-    proof._populate_metrics(metrics, payload, [])
+    proof._populate_metrics(metrics, payload)
 
     assert metrics["disagreements"] == 2
     assert metrics["f2_to_p3_mapped"] == 1
+    assert metrics["ocr_token_count"] == 5

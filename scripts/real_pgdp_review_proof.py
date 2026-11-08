@@ -1288,7 +1288,7 @@ def populate_proof_evidence(
         evidence["proposal_count"] = _list_length(proposals, "proposals")
         evidence["invariants"] = invariants
         evidence["behavior_observations"] = observations
-        _populate_metrics(case_report["metrics"], before_inspect, before_groups)
+        _populate_metrics(case_report["metrics"], before_inspect)
 
 
 def _operation_payload(
@@ -1441,7 +1441,6 @@ def _group_topology(
 def _populate_metrics(
     metrics: AlignmentMetrics,
     payload: dict[str, object] | None,
-    groups: list[tuple[str, str, str, str, str | None]],
 ) -> None:
     if payload is None or not isinstance((result := payload.get("result")), dict):
         return
@@ -1461,11 +1460,19 @@ def _populate_metrics(
     metrics["group_dispositions"] = dispositions
     metrics["accepted_groups"] = dispositions.get("accepted", 0)
     metrics["disagreements"] = dispositions.get("changed", 0)
-    metrics["ocr_token_count"] = len(groups)
+    metrics["ocr_token_count"] = _ocr_word_count_from_result(result)
     split_count, join_count = _relation_counts(alignment)
     metrics["split_relations"] = split_count
     metrics["join_relations"] = join_count
     metrics["split_join_groups"] = split_count + join_count
+
+
+def _ocr_word_count_from_result(result: dict[str, object]) -> int | None:
+    """Count public OCR words, never many-to-many alignment review groups."""
+    ocr = result.get("ocr")
+    if not isinstance(ocr, dict) or not isinstance((words := ocr.get("ocr_words")), list):
+        return None
+    return len(words)
 
 
 def _group_dispositions(payload: dict[str, object]) -> dict[str, int]:
