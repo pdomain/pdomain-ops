@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 
@@ -221,6 +221,114 @@ def test_public_proof_sequences_each_page_without_inventing_review_payload(
             "output_root": str(tmp_path / "prepared"),
         }
     ]
+
+
+def test_public_proof_confirms_working_copy_page_kinds_before_proposals(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    requests: list[tuple[str, ...]] = []
+
+    def run_command(
+        argv: tuple[str, ...], *, request: dict[str, object] | None, timeout_seconds: float
+    ) -> proof.PublicOperation:
+        del request, timeout_seconds
+        requests.append(argv)
+        payload: dict[str, object] = {"ok": True, "result": {"book_path": "/prepared/book"}}
+        if "load" in argv:
+            payload = {"project": {"project_id": "labeler-project"}}
+        elif "page" in argv:
+            payload = {"generation": 7}
+        elif "inspect" in argv:
+            payload = {
+                "generation": 7,
+                "result": {
+                    "result_id": "result-1",
+                    "groups": [{"group_id": "group-1", "ocr_text": "Alpha"}],
+                },
+            }
+        return {
+            "subject": "",
+            "stage": "",
+            "argv": list(argv),
+            "status": "ok",
+            "payload": payload,
+            "error": None,
+        }
+
+    monkeypatch.setattr(proof, "_run_json_command", run_command)
+    proof.run_public_proof(
+        cases=[proof.ProofCase("projectID68658d72319cb", "03.png", "contents_leaders")],
+        corpus_root=tmp_path / "corpus",
+        source_python=tmp_path / "python",
+        source_module="pdomain_source_data.pgdp_review_cli",
+        source_output_root=tmp_path / "prepared",
+        labeler_control=tmp_path / "control",
+        labeler_base_url="http://127.0.0.1:8000",
+        timeout_seconds=10.0,
+        review_decision="edited",
+    )
+
+    confirmation = next(
+        argv for argv in requests if any("/page-kinds/confirm" in arg for arg in argv)
+    )
+    body = json.loads(confirmation[confirmation.index("--json") + 1])
+    assert body == {
+        "pages": [{"page_index": 0, "kind": "contents"}],
+        "note": "Algorithm review for real PGDP proof working copy",
+    }
+
+
+def test_public_proof_does_not_propose_regions_after_page_kind_confirmation_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def run_command(
+        argv: tuple[str, ...], *, request: dict[str, object] | None, timeout_seconds: float
+    ) -> proof.PublicOperation:
+        del request, timeout_seconds
+        payload: dict[str, object] = {"ok": True, "result": {"book_path": "/prepared/book"}}
+        status: Literal["ok", "error", "blocked"] = "ok"
+        if "load" in argv:
+            payload = {"project": {"project_id": "labeler-project"}}
+        elif any("/page-kinds/confirm" in arg for arg in argv):
+            status = "error"
+            payload = {"error": "confirmation_failed"}
+        elif "page" in argv:
+            payload = {"generation": 7}
+        elif "inspect" in argv:
+            payload = {
+                "generation": 7,
+                "result": {
+                    "result_id": "result-1",
+                    "groups": [{"group_id": "group-1", "ocr_text": "Alpha"}],
+                },
+            }
+        return {
+            "subject": "",
+            "stage": "",
+            "argv": list(argv),
+            "status": status,
+            "payload": payload,
+            "error": None,
+        }
+
+    monkeypatch.setattr(proof, "_run_json_command", run_command)
+    operations = proof.run_public_proof(
+        cases=[proof.ProofCase("projectIDone", "008.png", "verse_indent")],
+        corpus_root=tmp_path / "corpus",
+        source_python=tmp_path / "python",
+        source_module="pdomain_source_data.pgdp_review_cli",
+        source_output_root=tmp_path / "prepared",
+        labeler_control=tmp_path / "control",
+        labeler_base_url="http://127.0.0.1:8000",
+        timeout_seconds=10.0,
+        review_decision="edited",
+    )
+
+    proposal = next(
+        operation for operation in operations if operation["stage"] == "labeler_propose"
+    )
+    assert proposal["status"] == "blocked"
+    assert not any(operation["stage"] == "labeler_proposals" for operation in operations)
 
 
 def test_public_proof_rejects_an_empty_all_pass_operation_list() -> None:

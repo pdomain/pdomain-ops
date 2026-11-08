@@ -593,6 +593,46 @@ def run_public_proof(
                 timeout_seconds=timeout_seconds,
                 review_decision=review_decision,
             )
+        page_kind_confirmation = _operation(
+            _run_json_command(
+                (
+                    *control_prefix,
+                    "request",
+                    "POST",
+                    f"/api/projects/{labeler_project_id}/page-kinds/confirm",
+                    "--json",
+                    json.dumps(
+                        {
+                            "pages": [
+                                {
+                                    "page_index": page_index,
+                                    "kind": _proof_page_kind(case),
+                                }
+                                for page_index, case in enumerate(project_cases)
+                            ],
+                            "note": "Algorithm review for real PGDP proof working copy",
+                        }
+                    ),
+                ),
+                request=None,
+                timeout_seconds=timeout_seconds,
+            ),
+            subject=project_id,
+            stage="labeler_page_kind_confirm",
+        )
+        operations.append(page_kind_confirmation)
+        if page_kind_confirmation["status"] != "ok":
+            operations.append(
+                {
+                    "subject": project_id,
+                    "stage": "labeler_propose",
+                    "argv": [],
+                    "status": "blocked",
+                    "payload": page_kind_confirmation["payload"],
+                    "error": "page-kind confirmation failed; region proposal was not attempted",
+                }
+            )
+            continue
         propose = _operation(
             _run_json_command(
                 (*control_prefix, "propose", labeler_project_id, "--wait"),
@@ -613,6 +653,10 @@ def run_public_proof(
                 timeout_seconds=timeout_seconds,
             )
     return operations
+
+
+def _proof_page_kind(case: ProofCase) -> str:
+    return "contents" if case.page_key == "03.png" else "body"
 
 
 def _source_book_path(operation: PublicOperation) -> str | None:
@@ -1020,7 +1064,11 @@ def public_proof_complete(*, cases: list[ProofCase], operations: list[PublicOper
         for stage in required
     ):
         return False
-    return all((case.project_id, "labeler_propose") in observed for case in cases)
+    return all(
+        (case.project_id, stage) in observed
+        for case in cases
+        for stage in ("labeler_page_kind_confirm", "labeler_propose")
+    )
 
 
 def populate_proof_evidence(
