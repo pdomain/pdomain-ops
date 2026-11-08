@@ -1662,6 +1662,19 @@ def _behavior_observations(
             observations["independent_columns"] = "verified"
         else:
             observations["independent_columns"] = "genuine_mismatch"
+    if case.intent in {"quote_footnote", "quote_continuation"}:
+        if not proposal_records:
+            observations["quote_columns_abstained"] = "missing_proposal"
+        elif _proposals_contain_column_flow(proposal_records):
+            observations["quote_columns_abstained"] = "genuine_mismatch"
+        else:
+            observations["quote_columns_abstained"] = "verified"
+    if case.intent == "quote_continuation":
+        observations["blockquote_source_metadata"] = (
+            "verified"
+            if _blockquote_proposal_has_source_metadata(proposal_records)
+            else "genuine_mismatch"
+        )
     return observations
 
 
@@ -1701,6 +1714,38 @@ def _proposal_records(payload: dict[str, object] | None) -> list[dict[str, objec
 
 def _record_roles(records: list[dict[str, object]]) -> set[str]:
     return {role for record in records if isinstance((role := record.get("role")), str)}
+
+
+def _proposals_contain_column_flow(records: list[dict[str, object]]) -> bool:
+    return any(
+        isinstance((structure := _proposal_layout_structure(record)), dict)
+        and structure.get("kind") == "column_flow"
+        for record in records
+    )
+
+
+def _blockquote_proposal_has_source_metadata(records: list[dict[str, object]]) -> bool:
+    for record in records:
+        if record.get("role") != "blockquote":
+            continue
+        structure = _proposal_layout_structure(record)
+        evidence = record.get("evidence")
+        if not isinstance(structure, dict) or structure.get("kind") != "blockquote":
+            continue
+        if not isinstance(evidence, dict) or not isinstance(
+            (hints := evidence.get("layout_hints")), list
+        ):
+            continue
+        if any(
+            isinstance(hint, dict)
+            and hint.get("kind") == "blockquote"
+            and hint.get("source") == "f2"
+            and isinstance((source_ref := hint.get("source_ref")), str)
+            and bool(source_ref)
+            for hint in hints
+        ):
+            return True
+    return False
 
 
 def _confirmed_region_roles(payload: dict[str, object] | None) -> set[str]:

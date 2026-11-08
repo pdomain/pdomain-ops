@@ -742,13 +742,94 @@ def test_semantic_observations_do_not_pass_empty_or_null_evidence() -> None:
         {"result": {"projection": {"unresolved": ["missing"]}}},
         {"proposals": [{"role": "poetry", "evidence": {"alignment_group_ids": []}}]},
     )
+    quote_false_positive = proof._behavior_observations(
+        proof.ProofCase("project", "081.png", "quote_footnote"),
+        None,
+        None,
+        {
+            "proposals": [
+                {
+                    "role": "paragraph",
+                    "evidence": {"layout_structure": {"kind": "column_flow"}},
+                }
+            ]
+        },
+    )
+    quote_continuation = proof._behavior_observations(
+        proof.ProofCase("project", "082.png", "quote_continuation"),
+        None,
+        None,
+        {
+            "proposals": [
+                {
+                    "role": "blockquote",
+                    "evidence": {
+                        "layout_structure": {"kind": "blockquote"},
+                        "layout_hints": [
+                            {
+                                "kind": "blockquote",
+                                "source": "f2",
+                                "source_ref": "source/F2.json",
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+    )
+    quote_missing_source_metadata = proof._behavior_observations(
+        proof.ProofCase("project", "082.png", "quote_continuation"),
+        None,
+        None,
+        {
+            "proposals": [
+                {
+                    "role": "blockquote",
+                    "evidence": {
+                        "layout_structure": {"kind": "blockquote"},
+                        "layout_hints": [{"kind": "blockquote", "source": "f2"}],
+                    },
+                }
+            ]
+        },
+    )
+    quote_wrong_hint_kind = proof._behavior_observations(
+        proof.ProofCase("project", "082.png", "quote_continuation"),
+        None,
+        None,
+        {
+            "proposals": [
+                {
+                    "role": "blockquote",
+                    "evidence": {
+                        "layout_structure": {"kind": "blockquote"},
+                        "layout_hints": [
+                            {
+                                "kind": "paragraph",
+                                "source": "f2",
+                                "source_ref": "source/F2.json",
+                            }
+                        ],
+                    },
+                }
+            ]
+        },
+    )
 
     assert numeric["not_poetry"] == "missing_proposal"
     assert formatter["formatter_or_tb_visible"] == "mismatch"
     assert verse["verse_stanzas_or_indents"] == "partial_unresolved"
+    assert quote_false_positive["quote_columns_abstained"] == "genuine_mismatch"
+    assert quote_continuation == {
+        "quote_columns_abstained": "verified",
+        "blockquote_source_metadata": "verified",
+    }
+    assert quote_missing_source_metadata["blockquote_source_metadata"] == "genuine_mismatch"
+    assert quote_wrong_hint_kind["blockquote_source_metadata"] == "genuine_mismatch"
     assert proof._behavior_observations_complete(numeric) is False
     assert proof._behavior_observations_complete(formatter) is False
     assert proof._behavior_observations_complete(verse) is True
+    assert proof._behavior_observations_complete(quote_false_positive) is False
 
 
 def test_alignment_metrics_count_changed_groups_and_linked_relations() -> None:
