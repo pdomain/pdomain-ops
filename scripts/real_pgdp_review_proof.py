@@ -35,6 +35,7 @@ _WORD_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 ProofMode = Literal["describe", "validate-ocr", "proof"]
 ReviewDecision = Literal["pending", "accepted", "rejected", "edited"]
 CachedOcrValidation = Literal["not_requested", "validated", "unavailable"]
+OcrWordSnapshot = tuple[int, int, str, str, str]
 DEFAULT_CASES_PATH = Path(__file__).resolve().parent / "fixtures" / "real-pgdp-review-cases.tsv"
 
 
@@ -1226,6 +1227,8 @@ def populate_proof_evidence(
         evidence = case_report["proof_evidence"]
         before_ocr, before_gt = _page_texts(before_page)
         after_ocr, after_gt = _page_texts(after_page)
+        before_words = _page_ocr_word_snapshot(before_page)
+        after_words = _page_ocr_word_snapshot(after_page)
         before_groups = _inspection_groups(before_inspect)
         after_groups = _inspection_groups(after_inspect)
         note = f"real-proof:{subject}"
@@ -1235,6 +1238,8 @@ def populate_proof_evidence(
             invariants.append("raw_ocr_text_preserved")
         if before_gt == after_gt and before_gt is not None:
             invariants.append("ground_truth_text_preserved")
+        if before_words and before_words == after_words:
+            invariants.append("raw_ocr_word_order_ids_boxes_preserved")
         if _group_topology(before_groups) == _group_topology(after_groups):
             invariants.append("alignment_group_order_boxes_source_ids_preserved")
         if reviewed is not None and reviewed[4] is not None:
@@ -1259,6 +1264,7 @@ def populate_proof_evidence(
             for invariant in (
                 "raw_ocr_text_preserved",
                 "ground_truth_text_preserved",
+                "raw_ocr_word_order_ids_boxes_preserved",
                 "alignment_group_order_boxes_source_ids_preserved",
                 "edited_group_note_and_reviewed_text_survived_reload",
             )
@@ -1275,7 +1281,7 @@ def populate_proof_evidence(
         )
         evidence["raw_ocr_text"] = before_ocr
         evidence["ground_truth_text"] = before_gt
-        evidence["raw_ocr_token_count"] = len(before_groups)
+        evidence["raw_ocr_token_count"] = len(before_words) if before_words else None
         evidence["raw_ocr_word_count"] = _count_words(before_ocr)
         evidence["ocr_engine"] = _ocr_engine(operations, subject)
         evidence["reviewed_group_id"] = reviewed[0] if reviewed is not None else None
@@ -1289,6 +1295,9 @@ def populate_proof_evidence(
         evidence["invariants"] = invariants
         evidence["behavior_observations"] = observations
         _populate_metrics(case_report["metrics"], before_inspect)
+        case_report["metrics"]["timing_ms"] = _job_elapsed_ms(
+            _operation_for(operations, subject, "labeler_align")
+        )
 
 
 def _operation_payload(
@@ -1370,6 +1379,47 @@ def _page_texts(payload: dict[str, object] | None) -> tuple[str | None, str | No
     )
 
 
+def _page_ocr_word_snapshot(payload: dict[str, object] | None) -> list[OcrWordSnapshot] | None:
+    """Return public OCR words in reading order, including their stable IDs and boxes."""
+    if payload is None or not isinstance((lines := payload.get("line_matches")), list):
+        return None
+    words: list[OcrWordSnapshot] = []
+    for line in lines:
+        if (
+            not isinstance(line, dict)
+            or not isinstance((line_index := line.get("line_index")), int)
+            or isinstance(line_index, bool)
+        ):
+            return None
+        matches = line.get("word_matches")
+        if not isinstance(matches, list):
+            return None
+        for match in matches:
+            if not isinstance(match, dict):
+                return None
+            word_index = match.get("word_index")
+            ocr_text = match.get("ocr_text")
+            word_id = match.get("word_id")
+            if (
+                not isinstance(word_index, int)
+                or isinstance(word_index, bool)
+                or not isinstance(ocr_text, str)
+                or not isinstance(word_id, str)
+                or "bbox" not in match
+            ):
+                return None
+            words.append(
+                (
+                    line_index,
+                    word_index,
+                    ocr_text,
+                    word_id,
+                    json.dumps(match["bbox"], separators=(",", ":"), sort_keys=True),
+                )
+            )
+    return words
+
+
 def _list_length(payload: dict[str, object] | None, name: str) -> int | None:
     if payload is None:
         return None
@@ -1387,6 +1437,23 @@ def _ocr_engine(operations: list[PublicOperation], subject: str) -> str | None:
             engine = operation["argv"][engine_index + 1 : engine_index + 2]
             return engine[0] if engine else None
     return None
+
+
+def _job_elapsed_ms(operation: PublicOperation | None) -> int | None:
+    """Return the public job's wall-clock elapsed time, if both timestamps exist."""
+    if operation is None or operation["payload"] is None:
+        return None
+    created_at = operation["payload"].get("created_at")
+    updated_at = operation["payload"].get("updated_at")
+    if not isinstance(created_at, str) or not isinstance(updated_at, str):
+        return None
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    elapsed_ms = round((updated - created).total_seconds() * 1000)
+    return elapsed_ms if elapsed_ms >= 0 else None
 
 
 def _inspection_groups(
@@ -1450,7 +1517,6 @@ def _populate_metrics(
         metrics["f2_to_p3_mapped"] = _mapping_count(alignment.get("f2_to_p3"))
         metrics["p3_to_ocr_mapped"] = _mapping_count(alignment.get("p3_to_ocr"))
         metrics["alignment_warning_count"] = _list_value_length(alignment.get("warnings"))
-        metrics["timing_ms"] = _timing_ms(alignment.get("timing"))
     if isinstance(projection, dict):
         metrics["projected_hints"] = _value_count(projection.get("layout_hints"))
         metrics["style_projection"] = _value_count(projection.get("style_spans"))
@@ -1548,17 +1614,6 @@ def _value_count(value: object) -> int | None:
 
 def _list_value_length(value: object) -> int | None:
     return len(value) if isinstance(value, list) else None
-
-
-def _timing_ms(value: object) -> int | None:
-    if not isinstance(value, dict):
-        return None
-    seconds = [
-        item
-        for item in value.values()
-        if isinstance(item, (int, float)) and not isinstance(item, bool)
-    ]
-    return round(sum(seconds) * 1000) if seconds else None
 
 
 def _behavior_observations(

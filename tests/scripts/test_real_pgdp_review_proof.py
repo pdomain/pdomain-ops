@@ -546,6 +546,116 @@ def test_one_column_only_makes_physical_column_proof_incomplete(tmp_path: Path) 
     assert evidence["status"] == "invariants_incomplete"
 
 
+def test_changed_public_ocr_word_snapshot_makes_proof_incomplete(tmp_path: Path) -> None:
+    case = proof.ProofCase("project", "plain.png", "ordinary")
+    report = build_setup_report(
+        cases=[case],
+        corpus_root=tmp_path / "corpus",
+        ocr_root=None,
+        mode="proof",
+    )
+    subject = "project/plain.png"
+    before_word = {
+        "word_index": 0,
+        "ocr_text": "Alpha",
+        "word_id": "word-1",
+        "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+    }
+    after_word = {**before_word, "bbox": {"x": 2, "y": 2, "width": 3, "height": 4}}
+    before_group = {
+        "group_id": "group-1",
+        "ocr_text": "Alpha",
+        "box": {"x": 1},
+        "source_word_ids": ["source-1"],
+        "note": "",
+        "reviewed_text": None,
+    }
+    after_group = {**before_group, "note": f"real-proof:{subject}", "reviewed_text": "Alpha"}
+    operations: list[proof.PublicOperation] = [
+        {
+            "subject": subject,
+            "stage": "labeler_page_after_ocr",
+            "argv": [],
+            "status": "ok",
+            "payload": {
+                "page_text_ocr": "Alpha",
+                "page_text_gt": "Alpha",
+                "line_matches": [{"line_index": 0, "word_matches": [before_word]}],
+            },
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_inspect",
+            "argv": [],
+            "status": "ok",
+            "payload": {"result": {"groups": [before_group], "ocr": {"ocr_words": [{}]}}},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_inspect_after_reload",
+            "argv": [],
+            "status": "ok",
+            "payload": {"result": {"groups": [after_group]}},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_proposals",
+            "argv": [],
+            "status": "ok",
+            "payload": {"proposals": []},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_page_after_region_review",
+            "argv": [],
+            "status": "ok",
+            "payload": {
+                "page_text_ocr": "Alpha",
+                "page_text_gt": "Alpha",
+                "line_matches": [{"line_index": 0, "word_matches": [after_word]}],
+                "regions": [],
+            },
+            "error": None,
+        },
+    ]
+
+    proof.populate_proof_evidence(report=report, cases=[case], operations=operations)
+
+    evidence = report["cases"][0]["proof_evidence"]
+    assert evidence["raw_ocr_token_count"] == 1
+    assert "alignment_group_order_boxes_source_ids_preserved" in evidence["invariants"]
+    assert "raw_ocr_word_order_ids_boxes_preserved" not in evidence["invariants"]
+    assert evidence["status"] == "invariants_incomplete"
+
+
+def test_job_elapsed_ms_uses_public_job_timestamps() -> None:
+    operation: proof.PublicOperation = {
+        "subject": "project/plain.png",
+        "stage": "labeler_align",
+        "argv": [],
+        "status": "ok",
+        "payload": {
+            "created_at": "2026-11-08T12:00:00.000000Z",
+            "updated_at": "2026-11-08T12:00:01.250000Z",
+        },
+        "error": None,
+    }
+
+    assert proof._job_elapsed_ms(operation) == 1250
+
+
+def test_malformed_public_ocr_word_snapshot_is_unavailable() -> None:
+    snapshot = proof._page_ocr_word_snapshot(
+        {"line_matches": [{"line_index": 0, "word_matches": [{"ocr_text": "Alpha"}]}]}
+    )
+
+    assert snapshot is None
+
+
 def test_public_proof_does_not_propose_regions_after_page_kind_confirmation_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
