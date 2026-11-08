@@ -1,8 +1,8 @@
 ---
-Status: draft
+Status: implemented
 Owner: CT
 Created: 2026-11-07
-Last verified: 2026-11-07
+Last verified: 2026-11-08
 Kind: plan
 ---
 
@@ -10,525 +10,311 @@ Kind: plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn one page's F2 text, and a Gutenberg table when the edition alignment accepts that page, into region proposals a person can accept and export for layout training.
+**Goal:** Use F2 and aligned Gutenberg formatting to propose page regions and verse structure that people can review, save, and export for training.
 
-**Architecture:** `pdomain-book-contracts` reads F2 into poetry, blockquote, and table spans with grapheme ranges. `pdomain-source-data` reads Gutenberg HTML only for `<table>` text. The labeler matches those words to OCR word boxes and appends a `RegionProposal`. The box is the union of the matched word boxes. Training keeps reading `regions/labels.json` after a person accepts the proposal. This plan does not train a model or invent a column box.
+**Architecture:** Contracts describe text evidence without pixel boxes. Source-data extracts Gutenberg hints and attaches them to accepted edition alignments. The labeler combines those hints with F2 and OCR geometry through its existing proposal job. Accepted formatting survives export, and training reads it as optional data.
 
-**Tech Stack:** Python, Pydantic models in `pdomain-book-contracts`, the existing Gutenberg HTML parser in `pdomain-source-data`, and `RegionProposalLog` in `pdomain-ocr-labeler-spa`.
+**Tech Stack:** Python, existing F2 tokenizer and Gutenberg HTML parser, immutable shared records, the labeler's region detectors and React review panel, and the existing layout-training export loader.
 
-**Spec:** [What this pass may claim](#what-this-pass-may-claim) in this file.
+**Spec:** [What this pass may claim](#what-this-pass-may-claim) records the corrected requirements and implementation choices.
 
 ## Goal
 
-Turn one page's F2 text, and a Gutenberg table when the edition alignment accepts that page, into region proposals a person can accept and export for layout training.
+A person can load a prepared book, propose regions, review verse and column structure, accept or edit it, reload the book, and export the reviewed result. Both F2 and Gutenberg can inform verse, stanza boundaries, line breaks, indentation, and block quotes. Columns remain distinct from tables.
 
 ## Architecture
 
-`pdomain-book-contracts` reads F2 into poetry, blockquote, and table spans with grapheme ranges. `pdomain-source-data` reads Gutenberg HTML only for `<table>` text. The labeler matches those words to OCR word boxes and appends a `RegionProposal`. The box is the union of the matched word boxes. Training keeps reading `regions/labels.json` after a person accepts the proposal. This plan does not train a model or invent a column box.
+Four repositories own the work. `pdomain-book-contracts` defines portable evidence and reviewed structure. `pdomain-source-data` extracts and aligns Gutenberg evidence. `pdomain-ocr-labeler-spa` resolves physical geometry. It also owns review, persistence, and export. `pdomain-ocr-training` reads the optional reviewed structure beside its existing region labels.
+
+The coordinator owns this plan and session briefs. Each repository has one implementation session in its own Herdr tab. Sessions may use parallel subagents for independent files. They must assign ownership and integrate their subagents' changes before reporting completion.
 
 ## Tech Stack
 
-Python, Pydantic models in `pdomain-book-contracts`, the existing Gutenberg HTML parser in `pdomain-source-data`, and `RegionProposalLog` in `pdomain-ocr-labeler-spa`.
+Use the current Python and TypeScript stacks. Keep contracts free of imaging and ML dependencies. Keep the labeler independent of the source-data package. Run focused tests, each repository's required checks, and browser verification for the changed review flow.
 
 ## Global Constraints
 
-- Do not add a column role and do not draw a column box. A Gutenberg table that imitates two columns becomes one `table` proposal, which a person can reject.
-- Do not write a `RegionProposal` unless at least one OCR word matches and the union box has left ≤ right and top ≤ bottom.
-- An unmatched or crossed `/* */` or `/# #/` pair produces no span.
-- An unclosed `<table>` produces no span and does not consume the rest of the page.
-- Gutenberg table text is attached only when an accepted edition alignment names that page. With no alignment, only F2 is used.
-- Proposals are appended to `.pd-pages/region-proposals.jsonl`. They are not written into the page content blob.
-- `depends_on` is exactly `{word_text, word_boxes}`.
-- `model_id` is `f2-gutenberg-layout` and `model_version` is `1`.
-- Confidence is `0.9` for F2 alone, `0.7` for Gutenberg alone, and `0.95` when both sources have the same role and the same word sequence.
-- Word splitting uses `[^\W_]+(?:['\u2019][^\W_]+)*`. Matching to OCR words is casefold and must be one contiguous run. The first run wins.
-- Do not modify the PGDP corpus. Do not download Gutenberg. Do not bump `pdomain.layout-regions` version 1. Do not add `structural_spans` to `TypographyPageRecord`. That record's vendored schema is hashed by `test_vendored_page_record_schema_is_exact_and_offline_resolvable`.
-- After Tasks 1 and 3, publish `pdomain-book-contracts` with `BUMP=patch ./scripts/do-release.sh`, publish the pip index, and pin the labeler to that release. Do not use a path dependency. Do not publish the labeler. Do not set `FORCE=1`. Do not set `SKIP_PUSH=1`.
-- Commit as `ConcaveTrillion <concavetrillion@gmail.com>`. Do not pass `--author`. Do not change global git config.
+These constraints governed the initial local proof. The later owner-authorized
+release and merge stage is recorded under [Rollout outcome](#rollout-outcome).
+
+- P3 remains ground-truth page text. F2 and Gutenberg provide reviewable formatting evidence.
+- A `<table>` element can encode a data table, columns, verse alignment, or other presentation. The tag alone never assigns the `table` region role.
+- Physical columns use separate regions with their content roles, such as `paragraph` or `poetry`, plus column grouping and reading order. Do not add a semantic column role merely to record placement.
+- Source indentation and stanza breaks describe the source edition. Keep them distinct from measured scan geometry and expose disagreements.
+- Use Gutenberg evidence only from accepted paired edition-alignment operations. A merged operation can name several possible scan pages; require page-specific text matching before proposing a box.
+- Every proposed region needs matched OCR words and a valid nonempty pixel box. HTML supplies no scan coordinates.
+- Reuse the existing book-scoped proposal handler as the sole run and proposal writer. Preserve locks, cancellation, facet digests, page eligibility, and accept/reject carry-forward.
+- Preserve `TypographyPageRecord`, existing edition segment IDs, manifest wire formats, and `regions/labels.json` version 1.
+- Record reviewed structure without moving words or renumbering the OCR hierarchy. Existing word identity must survive.
+- Build a working local proof first. Use locally built wheels in isolated environments for cross-repo verification. Do not add tracked sibling path dependencies, new hash gates, or a release prerequisite.
+- Do not publish, push, tag, train a model, download models, or modify the PGDP corpus in this implementation. A normal package release and index refresh are separate work after the proof is reviewed.
+- Preserve unrelated changes and staged files. Work in isolated branches/worktrees, commit only owned files, and verify the effective repository identity before any local commit.
 
 ## Review Focus
 
-- An F2 `<table summary="x">` with no closer must emit no span, and the following paragraph's token kind must be `text`. Task 1 tests this.
-- A page that ends with a bare `*/` must not gain a poetry span. Task 1 tests this.
-- Gutenberg HTML that reflows two printed columns into one paragraph must not produce two regions. Task 2 tests that a paragraph without `<table>` produces no table text.
-- A rejected edition alignment must not attach a Gutenberg table. Task 3 tests `gutenberg_attached=False`.
-- OCR words that skip a middle word, reorder the span, or differ only by case must follow the contiguous casefold rule, and the first matching run wins. Task 5 tests those cases.
+- Gutenberg verse with nested inline markup and entities retains line order, stanza breaks, and source indentation. Tasks 1 and 2 test it; Task 3 verifies review and export.
+- A layout table encoding two prose columns produces separate paragraph regions when scan geometry supports them, never one table merely because HTML uses `<table>`. Tasks 2 and 3 test this.
+- Rejected alignment and ambiguous multi-page alignment cannot attach another page's evidence. Tasks 2 and 3 test page-specific selection.
+- Combining characters, repeated phrases, reordered words, and missing OCR words cannot silently shift a region onto unrelated text. Tasks 1 and 3 test these cases.
+- Acceptance, edits, rejection, reload, and repeated export retain only the current reviewed structure while keeping OCR word identities stable. Tasks 3 and 4 test the complete round trip.
 
 ## Agent Index
 
 - **Kind:** plan
-- **Status:** draft
+- **Status:** implemented
 - **Owner:** CT
-- **Last verified:** 2026-11-07
-- **Read when:** starting layout regions from PGDP F2 and a Project Gutenberg text, before training a layout model.
-- **Search terms:** F2, Gutenberg HTML, layout regions, poetry block, table, region proposal, labels.json
+- **Last verified:** 2026-11-08
+- **Read when:** implementing F2 and Gutenberg formatting evidence, physical column proposals, review, or layout-training export.
+- **Search terms:** F2, Gutenberg, verse, poetry, stanza, indentation, blockquote, columns, table, layout hints, reviewed structure
 
 ## What this pass may claim
 
-P3 in `pages.json` stays the ground-truth page text. It does not supply a region role.
+The owner corrected the earlier table-only plan. Gutenberg can also inform verse and other formatting. Two printed columns are a physical arrangement, not a table class. Source markup is evidence about structure. The scanned page and OCR positions determine physical regions.
 
-`rounds/F2.json` maps an image filename, such as `001.png`, to formatting text. The tokenizer already finds `/* */` as poetry and `/# #/` as a block quote. It also finds the inline tags `<i>`, `<b>`, `<sc>`, `<g>`, `<f>`, and `<u>`. The page record stores only the names `poetry_block` and `display_block`, once per page, and drops the range. `<table` is an unknown tag today, and its body remains visible text.
+F2 `/* */` supplies a poetry hint. `/# #/` supplies a display/block-quote candidate that still needs review. Gutenberg poem, poetry, verse, stanza, and blockquote markup can supply the corresponding hints. A plain paragraph or an isolated `<br>` does not establish verse. Preserve explicit line boundaries and raw indentation evidence from supported class/style declarations. This pass does not implement a browser's complete CSS layout engine.
 
-Gutenberg HTML can contain a real `<table>`. The edition model already allows a segment kind of `table`, and the extractor does not emit one. The HTML usually reflows two printed columns into one reading order. This pass does not reconstruct those columns.
+A bare table remains a `table_candidate`. Preserve its rows, cells, attributes, and warnings for downstream inspection. A real-table proposal requires supporting source semantics and compatible scan geometry. Repeated paragraph columns or verse laid out in cells must keep those content roles. If evidence remains ambiguous, retain the hint and explain the unresolved choice instead of creating a confident table label.
 
-Neither file contains a pixel box. The box comes from OCR words already on the page. `RegionProposal.box` is required, so a span with no matched word is skipped.
+Physical columns require separate geometric word groups with a real horizontal gap and overlapping vertical extent. Reuse the existing geometric reading-order helper when applicable. A full-width heading does not force the page into one table or one column. The labeler implementer must state and test deterministic gap/grouping thresholds. The first proof supports left-to-right printed pages. Bidirectional reading-order inference is outside this pass.
 
-A person accepts or rejects the proposal in the existing region panel. Export writes `regions/labels.json` with schema `pdomain.layout-regions` version 1. `load_layout_export` already reads that file. This plan uses the existing `poetry`, `blockquote`, and `table` values of `RegionRole`.
+Agreement between F2 and Gutenberg can strengthen a suggestion. Disagreement remains visible and reviewable. Confidence values `0.9` for F2, `0.7` for Gutenberg, and `0.95` for agreeing source content are ranking values, not measured probabilities. Ambiguous table evidence does not acquire those values as a table decision automatically.
 
-The labeler depends on `pdomain-book-contracts`, not `pdomain-source-data`. It receives HTML table text as strings. F2 still works when that list is empty. The new contracts symbols reach the labeler only through a contracts release.
+The first proof uses local fixtures and existing prepared-book evidence. It includes the real proposal caller and review/export path. Capturing stanza or column structure makes that data available to training; it does not train a stanza or reading-order model.
 
-## File map
+## Shared interfaces
 
-- `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/tokens.py` tokenizes a table as normal text inside block markers.
-- `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/structure.py` returns structural spans. It does not store them on the page record.
-- `pdomain-source-data/pdomain_source_data/edition_text/gutenberg.py` returns table text without changing edition segment kinds or ids.
-- `pdomain-ocr-labeler-spa/src/pdomain_ocr_labeler_spa/core/regions/text_layout.py` matches words to OCR boxes and builds proposals.
+Task 1 owns these public names. The other sessions may implement fixtures and private helpers in parallel. They must consume the contracts wheel before their final gate. If an interface needs changing, the contracts owner writes the change to its outbox. The coordinator then updates every consumer before integration.
 
-### Task 1: F2 spans with ranges
+`pdomain_book_contracts.layout.text_hints` defines immutable records with `to_dict()` and `from_dict()`:
+
+- `LayoutTextLine(text: str, stanza_index: int | None = None, indent_hint: str | None = None)`.
+- `LayoutTextHint(kind, source, text, lines, source_ref, grapheme_range=None, source_byte_range=None, attributes=(), table_rows=(), warnings=())`.
+- `kind` is one of `poetry`, `blockquote`, `table_candidate`, or `column_flow`. `source` is `f2` or `gutenberg_html`. `text` is nonempty source-visible text, and `lines` is a tuple of `LayoutTextLine`.
+- `source_ref` identifies the existing source artifact. Optional ranges are half-open integer pairs. F2 provides a visible grapheme range; Gutenberg provides a byte range in the original HTML artifact for alignment selection.
+- `attributes` is a tuple of string key/value pairs preserving class/style or structural evidence. `table_rows` is a tuple of rows, each a tuple of visible cell strings. These carry evidence, not physical boxes or a confirmed role.
+- `indent_hint` retains source-relative evidence such as `2em`, leading spaces, or a named class. It is never a scan-pixel offset. Preserve unknown units/classes rather than guessing conversions.
+
+The same module defines a validated `LayoutStructure` representation for reviewed region data. It supports optional column grouping, index, and reading order. It also supports ordered verse lines with stable word IDs, stanza indices, and source indentation, plus optional reviewed table rows/cells. Source indentation stays separate from measured indentation. Validation rejects invalid ranges, negative indices, and non-finite measured values.
+
+For this proof, word-bound reviewed structure uses the `word_id` values already stored on imported bundle `WordTypography` records. Preserve those IDs across text and geometry corrections. The labeler's legacy `stable_word_id` helper derives an ID from original text and reading order; it is not a persisted identity map and must not be used to promise stability after arbitrary legacy edits. Loose mirrors retain F2/geometry proposals, but saving word-bound stanza/line structure there is unsupported until they are prepared as a bundle. Explain that limitation in the review UI and reject unsupported writes clearly. Do not create a new identity migration system in this proof.
+
+Optional `word_signatures` are geometry snapshots for consumers, never join keys. Resolve and refresh those snapshots by stored `word_ids` when exporting after a geometry edit. Keep shared layout records independent of typography imports to avoid a dependency cycle.
+
+The contracts owner records its exact typed constructor and wire examples in `/tmp/pdomain-layout-20261108/contracts-outbox.txt` before consumers integrate. Field names in the reviewed wire record are `lines`, `word_ids`, `word_signatures`, `stanza_index`, `indent_hint`, `column_group_id`, `column_index`, and `reading_order`; optional table structure is `table_rows`. A nonempty reviewed line carries its ordered `word_ids`. Optional fields are omitted when unknown.
+
+`edition/layout-hints.json` is an optional prepared-book artifact:
+
+```json
+{
+  "schema": "pdomain.edition-layout-hints",
+  "version": 1,
+  "groups": [
+    {"page_ids": ["scan-page-id"], "edition_unit_ids": ["edition-unit-id"], "hints": []}
+  ]
+}
+```
+
+Each group comes from one accepted paired alignment operation. Its hints use the shared record conversion. A group may list multiple candidate pages. The labeler must still match hint text against the current page. The artifact stays reachable through existing supporting-evidence graph references. Missing evidence is a supported F2-only or geometry-only case.
+
+`regions/structure.json` accompanies the unchanged region-label export:
+
+```json
+{
+  "schema": "pdomain.layout-structure",
+  "version": 1,
+  "regions": [
+    {"prefix": "book/page", "page_index": 0, "region_id": "region-id", "structure": {}}
+  ]
+}
+```
+
+The join key is `(prefix, page_index, region_id)`. Export only confirmed, currently reviewed structure. Re-export replaces a page's entries and removes deleted structures. No rejected or unreviewed proposal structure enters this file.
+
+## Repository work and dependencies
+
+| Repository | Owned result | Depends on |
+| --- | --- | --- |
+| `pdomain-book-contracts` | Shared hint/structure records and F2 producers | Existing tokenizer |
+| `pdomain-source-data` | Gutenberg hints and accepted alignment sidecar | Contracts interface |
+| `pdomain-ocr-labeler-spa` | Evidence loading, geometric proposals, review, persistence, export | Contracts; source-data sidecar fixture |
+| `pdomain-ocr-training` | Optional reviewed-structure reader and compatibility tests | Contracts; labeler export fixture |
+| `pdomain-ops` | This plan, work assignment, integration evidence | All four owners |
+
+No implementation is needed in the OCR CLI, simple GUI, trainer SPA, synth, or index repositories for this proof. They can consume later package releases through the normal update path.
+
+### Task 1: Shared records and F2 evidence
+
+**Owner:** contracts session.
 
 **Files:**
 
-- Create: `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/structure.py`
-- Modify: `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/tokens.py`
-- Modify: `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/parser.py`
-- Test: `pdomain-book-contracts/tests/pgdp/f2/test_structure.py`
+- Create `pdomain-book-contracts/pdomain_book_contracts/layout/text_hints.py`.
+- Create `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/structure.py`.
+- Modify the existing F2 `tokens.py` and `parser.py` only where structural markup needs normal child scanning.
+- Add `tests/layout/test_text_hints.py` and `tests/pgdp/f2/test_structure.py`.
 
 **Interfaces:**
 
-- Consumes: `F2PageTokens` from `pdomain_book_contracts.sources.pgdp.f2.tokens`.
-- Produces: `StructuralSpan` and `structural_spans_from_tokens(parsed: F2PageTokens) -> tuple[StructuralSpan, ...]`. The page record is unchanged.
+- Consume `F2PageTokens` and its existing grapheme/source evidence.
+- Produce `layout_hints_from_tokens(parsed: F2PageTokens, *, source_ref: str) -> tuple[LayoutTextHint, ...]` and the shared records above.
+- Keep new layout records independent of typography base classes to avoid an import cycle.
 
-`StructuralSpan` has `role` of `poetry`, `blockquote`, or `table`. It has a half-open grapheme `start` and `end`, `source` fixed to `f2`, `source_slices`, and `warnings` as a tuple of strings. `start < end` is required. A normal span has `warnings == ()`.
+- [x] **Step 1: Write failing tests.** Assert record/wire round trips, source-relative indentation, and reviewed structure validation. Assert F2 poetry lines/stanzas, display-block candidates, combining-character ranges, nested inline styles in table cells, one outer nested-table candidate, crossed/bare/unclosed markers, and ordinary text after an unclosed table. Assert existing page-record bytes/schema stay unchanged.
+- [x] **Step 2: Confirm failures.** Run `uv run pytest tests/layout/test_text_hints.py tests/pgdp/f2/test_structure.py -v` from the contracts repository. Failure must identify the missing API or behavior.
+- [x] **Step 3: Implement the records and producer.** Handle `<table>`, `<tr>`, `<td>`, and `<th>` without swallowing nested tokens. Preserve cell boundaries and attributes. Guard parser lookups for unfamiliar block tokens. Slice using grapheme boundaries, never Python string indices applied to grapheme offsets.
+- [x] **Step 4: Verify and hand off.** Run focused tests and `make ci`. Build a local wheel into the coordination artifacts folder. Write exact field types, JSON examples, wheel path, commit and check results to the contracts outbox. No release or push.
+- [x] **Step 5: Commit owned files locally.** Record the isolated branch/worktree and author/committer evidence. Leave other sessions' files untouched.
 
-`/* */` maps to `poetry`, and `/# #/` maps to `blockquote`. An opening `<table…>` through `</table>` maps to `table`. The open token keeps its attributes and has empty `visible_text`. Text inside the table stays normal tokens, so an inner `<i>` still parses. A nested table emits one outer span with `warnings` set to `("nested_table",)`. It emits no second span.
+### Task 2: Gutenberg formatting and alignment transport
 
-- [ ] **Step 1: Write the failing tests**
-
-```python
-def test_poetry_span_covers_the_line_inside_the_markers() -> None:
-    parsed = _tokens("/*\nLine one\n*/")
-    spans = structural_spans_from_tokens(parsed)
-    assert len(spans) == 1
-    assert spans[0].role == "poetry"
-    assert parsed.visible_text[spans[0].start : spans[0].end].strip() == "Line one"
-
-
-def test_bare_closer_emits_no_span() -> None:
-    assert structural_spans_from_tokens(_tokens("*/")) == ()
-
-
-def test_crossed_blocks_emit_no_span() -> None:
-    assert structural_spans_from_tokens(_tokens("/* /# text */ #/")) == ()
-
-
-def test_unclosed_table_leaves_the_following_words() -> None:
-    parsed = _tokens('<table summary="x">\nCell\nNo closer\nNext paragraph')
-    assert structural_spans_from_tokens(parsed) == ()
-    tail = parsed.tokens[-1]
-    assert tail.kind is F2TokenKind.TEXT
-    assert "Next paragraph" in tail.text
-
-
-def test_table_body_keeps_an_inner_italic_tag() -> None:
-    parsed = _tokens("<table><td><i>Alpha</i></td></table>")
-    assert any(
-        token.kind is F2TokenKind.OPEN_TAG and token.text == "<i>" for token in parsed.tokens
-    )
-    assert any(token.kind is F2TokenKind.TEXT and token.text == "Alpha" for token in parsed.tokens)
-
-
-def test_nested_table_emits_one_outer_span() -> None:
-    parsed = _tokens("<table><td>Outer</td><table><td>Inner</td></table></table>")
-    spans = structural_spans_from_tokens(parsed)
-    assert len(spans) == 1
-    assert spans[0].role == "table"
-    assert spans[0].warnings == ("nested_table",)
-```
-
-`_tokens` must call the real F2 tokenizer. The poetry assertion compares the visible slice because the markers include the newlines around the line.
-
-- [ ] **Step 2: Run the tests and confirm they fail**
-
-Run: `cd /mnt/work/projects/pdomain/pdomain-book-contracts && uv run pytest tests/pgdp/f2/test_structure.py -v`
-
-Expected: FAIL because `structural_spans_from_tokens` is missing.
-
-- [ ] **Step 3: Implement the spans**
-
-In `tokens.py`, an opening tag named `table` becomes `BLOCK_OPEN`, and `</table>` becomes `BLOCK_CLOSE`. Both have empty `visible_text`. The open token keeps its attributes. Continue the scan after each tag. A missing `</table>` must not consume the rest of the page as `UNKNOWN`. The following paragraph stays `TEXT`.
-
-In `parser.py`, do not look up a block token in `_BLOCK_CONTEXT` when its text is not `/*`, `*/`, `/#`, or `#/`. That token must not change `structural_context`. Do not call the span function from the page-record builder. Do not modify `records.py`.
-
-- [ ] **Step 4: Re-run the tests**
-
-Run the same pytest command. Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-book-contracts
-git add pdomain_book_contracts/sources/pgdp/f2/structure.py pdomain_book_contracts/sources/pgdp/f2/tokens.py pdomain_book_contracts/sources/pgdp/f2/parser.py tests/pgdp/f2/test_structure.py
-git commit -m "feat: read F2 poetry, blockquote, and table spans"
-```
-
-### Task 2: Gutenberg table text
+**Owner:** source-data session. Extraction fixtures can run in parallel with Task 1.
 
 **Files:**
 
-- Modify: `pdomain-source-data/pdomain_source_data/edition_text/gutenberg.py`
-- Test: `pdomain-source-data/tests/edition_text/test_gutenberg.py`
+- Create `pdomain-source-data/pdomain_source_data/edition_text/layout_hints.py`.
+- Modify `pdomain-source-data/pdomain_source_data/tasks/typography/prepare_edition_labeler_book.py`.
+- Reuse `PreparedBookArtifact` and `PreparedLabelerBook.extra_artifacts` from `labeler_book_publication.py`.
+- Add `tests/edition_text/test_layout_hints.py` and extend edition-labeler preparation tests.
 
 **Interfaces:**
 
-- Consumes: HTML bytes already accepted by `_extract_html`.
-- Produces: `gutenberg_table_texts(data: bytes) -> tuple[str, ...]`. Each string is the visible text of one `<table>`, in source order, with tags removed. A paragraph that is not a table is absent.
+- Produce `extract_gutenberg_layout_hints(data: bytes, *, source_ref: str) -> tuple[LayoutTextHint, ...]`.
+- Publish the optional edition sidecar through existing artifact and graph-reference paths. Do not change `EditionDocument` kinds, IDs, or baseline serialized bytes.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write failing tests.** Explicit poetry/stanza wrappers preserve nested inline text, entities, line boundaries, and indentation evidence. Blockquotes produce hints. Plain `<br>` prose and generic containers do not become poetry. Preserve raw rows/cells in a table candidate, including a layout table containing verse or columns. Scripts, styles and Gutenberg boilerplate supply no text hints; supported stylesheet declarations may supply indentation evidence.
+- [x] **Step 2: Confirm failures.** Run `uv run pytest tests/edition_text/test_layout_hints.py -v` plus the existing preparation test module from this repository.
+- [x] **Step 3: Implement extraction and attachment.** Use raw HTML because the current edition model discards line boundaries. Map source byte ranges onto existing projection-unit ranges. Attach only after existing alignment acceptance/quality checks. Preserve all candidate page IDs for merged operations; rejected, unpaired or unrelated operations attach nothing. A malformed wrapper must not capture subsequent unrelated paragraphs.
+- [x] **Step 4: Verify and hand off.** Test unchanged edition-document serialization and graph discovery of the optional sidecar. Run the repository gate with the local contracts wheel in an isolated environment. Produce a fixture prepared book containing verse, an ambiguous table, and accepted alignment evidence for labeler integration.
+- [x] **Step 5: Commit owned files locally.** Report exact commands, results, branch, fixture and wheel paths. No corpus import, download, push, or publication.
 
-```python
-def test_html_table_text_keeps_cell_order() -> None:
-    html = b"<html><body><p>Before</p><table><tr><td>Alpha</td><td>Beta</td></tr></table><p>After</p></body></html>"
-    assert gutenberg_table_texts(html) == ("Alpha Beta",)
+### Task 3: Usable labeler proposals and reviewed formatting
 
-
-def test_reflowed_paragraph_is_not_a_table() -> None:
-    html = b"<html><body><p>Left column text</p><p>Right column text</p></body></html>"
-    assert gutenberg_table_texts(html) == ()
-
-
-def test_unclosed_html_table_returns_nothing() -> None:
-    html = b"<html><body><table><tr><td>Alpha</td></tr><p>After</p></body></html>"
-    assert gutenberg_table_texts(html) == ()
-```
-
-- [ ] **Step 2: Run the tests and confirm they fail**
-
-Run: `cd /mnt/work/projects/pdomain/pdomain-source-data && uv run pytest tests/edition_text/test_gutenberg.py::test_html_table_text_keeps_cell_order tests/edition_text/test_gutenberg.py::test_reflowed_paragraph_is_not_a_table tests/edition_text/test_gutenberg.py::test_unclosed_html_table_returns_nothing -v`
-
-Expected: FAIL because `gutenberg_table_texts` is missing.
-
-- [ ] **Step 3: Return table text without changing segments**
-
-Build `gutenberg_table_texts` from decoded cell text inside each complete `<table>`. Remove tags inside each cell and join the cells with one space. A missing `</table>` returns nothing for that table and must not run to the end of the file. Leave `EditionSegment.kind` and `segment_id` unchanged. Do not add a column kind.
-
-If `git status` in this repo shows other uncommitted work, stop and report that. Do not stash it.
-
-- [ ] **Step 4: Re-run the tests**
-
-Run the same pytest command. Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-source-data
-git add pdomain_source_data/edition_text/gutenberg.py tests/edition_text/test_gutenberg.py
-git commit -m "feat: extract Gutenberg table text in cell order"
-```
-
-### Task 3: Merge the two sources for one page
+**Owner:** labeler session. It may delegate detector/matching, persistence/export, and frontend/browser work to parallel subagents with separate files.
 
 **Files:**
 
-- Modify: `pdomain-book-contracts/pdomain_book_contracts/sources/pgdp/f2/structure.py`
-- Test: `pdomain-book-contracts/tests/pgdp/f2/test_structure.py`
+- Add `src/pdomain_ocr_labeler_spa/core/regions/text_layout.py`.
+- Extend `core/regions/detector.py`, `bootstrap.py`, and `core/jobs/handlers/propose_regions.py`.
+- Extend prepared evidence loading in `core/persistence/book_labeling_session.py` and `core/project_state.py` as needed.
+- Extend `api/regions.py`, `core/regions/block_adapter.py`, and `core/jobs/handlers/export.py`.
+- Update API payload models and `frontend/src/components/right-panel/RegionDetail.tsx`; add a focused structure editor if needed.
+- Extend region proposal, persistence, export, word-identity and browser tests.
 
 **Interfaces:**
 
-- Consumes: `StructuralSpan` from Task 1 and table strings from Task 2.
-- Produces: `PageLayoutSpan` and `merge_page_layout_spans(*, f2_spans: tuple[StructuralSpan, ...], f2_visible_text: str, gutenberg_table_texts: tuple[str, ...] = (), gutenberg_attached: bool) -> tuple[PageLayoutSpan, ...]`.
+- Consume the contracts producer and optional edition sidecar. Resolve F2 from prepared artifact payloads or `rounds/F2.json` for a loose mirror.
+- Add a text-evidence detector returning the existing `DetectedRegion` type. Compose it through the existing `POST /api/projects/{id}/regions/propose` job, rather than adding another journal writer.
+- Store reviewed `layout_structure` in `Block.additional_block_attributes`. Return it through confirmed-region APIs and the optional structure export.
 
-`PageLayoutSpan` has `role`, `sources` as a tuple of `f2` and `gutenberg_html`, `words` as a tuple of strings, and `confidence` as a float.
+- [x] **Step 1: Write failing tests.** Exercise F2-only, Gutenberg-only, agreeing and disagreeing verse evidence; source line/stanza/indent metadata; missing evidence; malformed optional sidecars; rejected and merged alignments; pixel and normalized OCR boxes; combining characters; repeated phrases; reordered and missing words. Ambiguous matches abstain instead of attaching to an unrelated occurrence.
+- [x] **Step 2: Confirm failures.** Run new matching tests and the existing proposal-run integration modules. Failures must exercise the production detector/job seam.
+- [x] **Step 3: Implement evidence resolution and geometry.** Match normalized source text to page words while retaining original source text. Use line geometry to split real columns, preserving semantic roles and reading order. Group across a full-width heading without merging both columns. Require stronger evidence for a table than the existence of an HTML element. Keep unresolved hints available for review with an explanation. Include every consumed facet in detector staleness dependencies.
+- [x] **Step 4: Implement review and persistence.** Show source disagreements, verse lines, stanza groups, indentation, column grouping/order, and unresolved hints in readable fields. Let a person correct these fields before acceptance or edit a confirmed region. Copy only reviewed structure to the saved block. Use stored bundle IDs for word-bound structure. Test that a loose-mirror word-bound structure write is rejected with guidance to prepare the book, while its normal region acceptance still works. Do not move OCR words. Preserve all existing accept, reject, refine, undo and carry-forward behavior.
+- [x] **Step 5: Export and verify.** Export the unchanged labels file plus current reviewed structure. Test accept/edit/reject/reload/delete/re-export, including removed sidecar entries and unchanged word identities. Correct a bound word's text and bounding box, reload, and export again: structure must keep the same `word_ids`, while geometry snapshots reflect the correction. Run `make openapi-export AI=1` when API payloads change, update frontend types, and run `make ci AI=1`.
+- [x] **Step 6: Verify in the browser and commit.** Use an isolated fixture book: load it, confirm page kind, click Propose regions, inspect Gutenberg verse evidence, correct stanza/indent or reading order, accept, reload, and export. Repeat for two-column prose and verify two paragraph regions, plus a genuine table and an unresolved layout-table case. Inspect neighboring region/edit flows. Save reproducible browser evidence, export fixture, commands and local commit in the outbox.
 
-Add `visible_span_text(visible_text: str, start: int, end: int) -> str`. Segment the complete string with `regex.findall(r"\X", visible_text)`. Validate `0 <= start < end <= len(graphemes)`, then join `graphemes[start:end]`. Invalid bounds raise `ValueError`. Use this helper for every structural-span slice, including poetry, blockquote, and table cell extraction. Grapheme indices must never index the Python string directly.
+### Task 4: Read reviewed structure for training
 
-When `gutenberg_attached` is false, ignore `gutenberg_table_texts`. When a Gutenberg table's words casefold-equal an F2 table's words, emit one span with both sources, confidence `0.95`, and the F2 word casing. Otherwise, emit each source on its own. Poetry and blockquote come only from F2. F2 alone has confidence `0.9`. Gutenberg alone has confidence `0.7`.
-
-For an F2 table, take each complete `<td>` or `<th>` body from `visible_span_text(f2_visible_text, span.start, span.end)`. Join those bodies with one space before applying the word pattern. The agreeing test must pass `parsed.visible_text` because the tokenizer does not insert the space Gutenberg uses. Poetry and blockquote apply the word pattern to the helper's visible slice. A Gutenberg table string is already cell-joined, so apply the word pattern to it.
-
-- [ ] **Step 1: Write the failing tests**
-
-```python
-def test_rejected_alignment_drops_the_gutenberg_table() -> None:
-    spans = merge_page_layout_spans(
-        f2_spans=(),
-        f2_visible_text="",
-        gutenberg_table_texts=("Alpha Beta",),
-        gutenberg_attached=False,
-    )
-    assert spans == ()
-
-
-def test_span_slice_uses_graphemes_after_a_combining_character() -> None:
-    assert visible_span_text("e\u0301Alpha", 1, 6) == "Alpha"
-    parsed = _tokens("e\u0301/*Alpha*/")
-    spans = merge_page_layout_spans(
-        f2_spans=structural_spans_from_tokens(parsed),
-        f2_visible_text=parsed.visible_text,
-        gutenberg_attached=False,
-    )
-    assert spans[0].words == ("Alpha",)
-    with pytest.raises(ValueError):
-        visible_span_text("Alpha", 0, 6)
-
-
-def test_agreeing_tables_become_one_span() -> None:
-    parsed = _tokens("<table><tr><td>Alpha</td><td>Beta</td></tr></table>")
-    spans = merge_page_layout_spans(
-        f2_spans=structural_spans_from_tokens(parsed),
-        f2_visible_text=parsed.visible_text,
-        gutenberg_table_texts=("Alpha Beta",),
-        gutenberg_attached=True,
-    )
-    assert len(spans) == 1
-    assert spans[0].sources == ("f2", "gutenberg_html")
-    assert spans[0].confidence == 0.95
-    assert spans[0].words == ("Alpha", "Beta")
-
-
-def test_gutenberg_only_table_uses_confidence_0_7() -> None:
-    spans = merge_page_layout_spans(
-        f2_spans=(),
-        f2_visible_text="",
-        gutenberg_table_texts=("Alpha Beta",),
-        gutenberg_attached=True,
-    )
-    assert len(spans) == 1
-    assert spans[0].role == "table"
-    assert spans[0].sources == ("gutenberg_html",)
-    assert spans[0].confidence == 0.7
-    assert spans[0].words == ("Alpha", "Beta")
-
-
-def test_different_word_sequences_stay_two_spans() -> None:
-    parsed = _tokens("<table><tr><td>Alpha</td><td>Beta</td></tr></table>")
-    spans = merge_page_layout_spans(
-        f2_spans=structural_spans_from_tokens(parsed),
-        f2_visible_text=parsed.visible_text,
-        gutenberg_table_texts=("Gamma Delta",),
-        gutenberg_attached=True,
-    )
-    assert len(spans) == 2
-    assert {span.words for span in spans} == {("Alpha", "Beta"), ("Gamma", "Delta")}
-```
-
-- [ ] **Step 2: Run the tests and confirm they fail**
-
-Run: `cd /mnt/work/projects/pdomain/pdomain-book-contracts && uv run pytest tests/pgdp/f2/test_structure.py::test_rejected_alignment_drops_the_gutenberg_table tests/pgdp/f2/test_structure.py::test_agreeing_tables_become_one_span tests/pgdp/f2/test_structure.py::test_gutenberg_only_table_uses_confidence_0_7 tests/pgdp/f2/test_structure.py::test_different_word_sequences_stay_two_spans -v`
-
-Also run `uv run pytest tests/pgdp/f2/test_structure.py::test_span_slice_uses_graphemes_after_a_combining_character -v` from the same repository.
-
-Expected: FAIL because `merge_page_layout_spans` is missing.
-
-- [ ] **Step 3: Implement the merge**
-
-Use the word pattern in the global constraints. Join F2 cells with one space before that pattern. Do not import `pdomain-source-data`.
-
-- [ ] **Step 4: Re-run the tests**
-
-Run the same pytest command. Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-book-contracts
-git add pdomain_book_contracts/sources/pgdp/f2/structure.py tests/pgdp/f2/test_structure.py
-git commit -m "feat: merge F2 layout spans with Gutenberg table text"
-```
-
-### Task 4: Publish the contracts and pin the labeler
+**Owner:** training session. Legacy compatibility tests can start in parallel.
 
 **Files:**
 
-- Modify: `pdomain-ocr-labeler-spa/pyproject.toml`
-- Modify: `pdomain-ocr-labeler-spa/uv.lock`
+- Modify `pdomain-ocr-training/pdomain_ocr_training/layout_regions.py`.
+- Extend `pdomain-ocr-training/tests/test_layout_regions.py` and the existing fake-model training tests.
 
 **Interfaces:**
 
-- Consumes: the symbols from Tasks 1 and 3, committed on `master` in `pdomain-book-contracts`.
-- Produces: a GitHub release of `pdomain-book-contracts` whose wheel contains those symbols, an updated pip index, and a labeler lock that installs that wheel.
+- Preserve `load_layout_export(export_dir: Path) -> list[LayoutPageExample]`.
+- Add `structure: NotRequired[LayoutStructure]` to `LayoutRegionExample`.
+- Add `load_layout_structures(export_dir: Path, *, pages: Sequence[LayoutPageExample]) -> dict[tuple[str, int, str], LayoutStructure]`.
 
-The labeler currently requires `pdomain-book-contracts>=0.2.0` from the index `pdomain-index-pip`. `uv.lock` downloads that wheel from the GitHub release. There is no path dependency.
+- [x] **Step 1: Write failing tests.** A missing sidecar returns exactly the old dictionaries. Valid verse and column data attach only to the matching page/region. Partial coverage is allowed. Unknown joins, duplicate keys, invalid versions and malformed structures fail clearly. A labeler fixture exported before and after a geometry correction retains the same structure `word_ids`. Class IDs and existing box training stay unchanged.
+- [x] **Step 2: Confirm failures.** Run `uv run pytest tests/test_layout_regions.py -v` and the existing fake-model forwarding test from this repository.
+- [x] **Step 3: Implement the optional join.** Return an empty mapping when the sidecar is absent. Omit the `structure` key for legacy regions. Use the shared validator for present records. Do not demand membership signatures from an existing empty region-membership list merely to load valid structure.
+- [x] **Step 4: Verify.** Confirm the fake model receives structure unchanged. Load the labeler's Task 3 export fixture and verify verse/stanza/column data after acceptance. Run `make ci` with the local contracts wheel where needed. Do not run real training or claim improved model quality.
+- [x] **Step 5: Commit owned files locally.** Report checks, compatibility outcome, local commit and integration fixture path.
 
-- [ ] **Step 1: Confirm the release command**
+### Task 5: Coordinator integration
 
-The command is `scripts/do-release.sh` in `pdomain-book-contracts`. The Makefile has no `release-*` target. That script is the publisher. If the script is missing, stop and report that. Do not invent another publisher.
-
-- [ ] **Step 2: Release the contracts**
-
-Tasks 1 and 3 must already be committed. The working tree must be clean and the branch must be `master`. If either is false, stop.
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-book-contracts
-flock /tmp/pdomain-release.lock env BUMP=patch ./scripts/do-release.sh
-```
-
-Do not set `FORCE=1`. Do not set `SKIP_PUSH=1`. Preflight is `make ci`. The script pushes `master` and the tag, then creates the GitHub release with the wheel and sdist. Read the printed tag. If preflight fails, stop. No tag should exist in that case.
-
-- [ ] **Step 3: Publish the index**
-
-The labeler resolves the package from `https://pdomain.github.io/pdomain-index-pip/simple/`. A GitHub release alone does not update that index.
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-index-pip
-flock /tmp/pdomain-index-publish.lock ./scripts/publish-index.sh
-```
-
-Do not set `DRY_RUN=1` for the real publish. Do not publish the labeler.
-
-- [ ] **Step 4: Pin the labeler and commit**
-
-If the labeler working tree is dirty, stop and report that. Do not stash it.
-
-In `pyproject.toml`, raise `pdomain-book-contracts>=0.2.0` to `>=` the released version, without the leading `v`. Keep `index = "pdomain-index-pip"`. Do not add `tool.uv.sources`.
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-ocr-labeler-spa
-uv lock
-git add pyproject.toml uv.lock
-git commit -m "chore: pin pdomain-book-contracts for layout spans"
-```
-
-Expected: `uv.lock` records the new release URL under `pdomain-book-contracts`. The commit does not include labeler source.
-
-### Task 5: Proposals from OCR word boxes
-
-**Files:**
-
-- Create: `pdomain-ocr-labeler-spa/src/pdomain_ocr_labeler_spa/core/regions/text_layout.py`
-- Test: `pdomain-ocr-labeler-spa/tests/unit/core/regions/test_text_layout.py`
-
-**Interfaces:**
-
-- Consumes: `PageLayoutSpan` and `merge_page_layout_spans` from the wheel pinned in Task 4. OCR words have `text` and `bounding_box` (`minX`, `minY`, `maxX`, `maxY`, and `is_normalized`). `RegionProposalLog` takes the project root.
-- Produces: `propose_text_layout(*, project_root: Path, page_index: int, page_key: str, f2_page_text: str, ocr_words: Sequence[object], page_width: int, page_height: int, created_at: str, page_facet_digests: dict[int, dict[str, str]], gutenberg_table_texts: Sequence[str] = (), gutenberg_attached: bool = False, run_id: str) -> tuple[RegionProposal, ...]`.
-
-`created_at` is UTC ISO-8601 and is stored as given. `page_facet_digests` must contain this `page_index` with non-empty `word_text` and `word_boxes`. Any other shape raises `ValueError`. The production caller passes `compute_page_facet_digests`. This function does not compute digests.
-
-Each call requires a non-empty `run_id` unique within this project's proposal log, including calls for different pages. Before writing anything, read the existing runs and reject an empty or reused ID with `ValueError`. Rejection leaves the log bytes unchanged. A call appends exactly one run, then its proposals. The caller serializes calls for the same project; concurrent writers are outside this function's contract.
-
-The run uses `model_id="f2-gutenberg-layout"`, `model_version="1"`, `depends_on=frozenset({FACET_WORD_TEXT, FACET_WORD_BOXES})`, `page_kind_decision_ref=None`, and `page_kind_was_confirmed=False`. Evidence stores `page_key` and `sources` as a list of strings. Convert each word with `_bbox_to_model(bounding_box, page_width=page_width, page_height=page_height)`. The proposal box is `(min x, min y, max x+width, max y+height)`. A span with no contiguous casefold match is omitted. The first contiguous run wins.
-
-F2 text for a mirrored page is `rounds/F2.json` keyed by the image filename. This function receives that page's string. It does not open the corpus and does not download Gutenberg.
-
-- [ ] **Step 1: Write the failing tests**
-
-`_word` sets `text` and a bounding box with `minX`, `minY`, `maxX`, `maxY`, and `is_normalized`. `_call` fills `page_width=100`, `page_height=200`, `created_at="2026-11-07T00:00:00+00:00"`, and `page_facet_digests={0: {"word_text": "digest-text", "word_boxes": "digest-boxes"}}`.
-
-```python
-def test_poetry_proposal_unions_the_matched_word_boxes(tmp_path: Path) -> None:
-    words = [_word("Line", 0, 0, 10, 10), _word("one", 12, 0, 30, 10)]
-    proposals = _call(tmp_path, f2_page_text="/*\nLine one\n*/", ocr_words=words)
-    assert len(proposals) == 1
-    assert proposals[0].role.value == "poetry"
-    assert proposals[0].box == (0, 0, 30, 10)
-    assert proposals[0].confidence == 0.9
-    assert proposals[0].evidence["page_key"] == "001.png"
-    assert proposals[0].evidence["sources"] == ["f2"]
-    runs = RegionProposalLog(tmp_path).runs()
-    assert runs[0].created_at == "2026-11-07T00:00:00+00:00"
-    assert runs[0].page_facet_digests[0] == {
-        "word_text": "digest-text",
-        "word_boxes": "digest-boxes",
-    }
-
-
-def test_reordered_ocr_words_emit_nothing(tmp_path: Path) -> None:
-    words = [_word("one", 0, 0, 10, 10), _word("Line", 12, 0, 30, 10)]
-    assert _call(tmp_path, f2_page_text="/*\nLine one\n*/", ocr_words=words) == ()
-
-
-def test_skipped_middle_word_emits_nothing(tmp_path: Path) -> None:
-    words = [
-        _word("Line", 0, 0, 10, 10),
-        _word("extra", 12, 0, 20, 10),
-        _word("one", 22, 0, 30, 10),
-    ]
-    assert _call(tmp_path, f2_page_text="/*\nLine one\n*/", ocr_words=words) == ()
-
-
-def test_casefold_match_and_first_run_wins(tmp_path: Path) -> None:
-    words = [
-        _word("line", 0, 0, 10, 10),
-        _word("ONE", 12, 0, 30, 10),
-        _word("Line", 100, 0, 110, 10),
-        _word("one", 112, 0, 130, 10),
-    ]
-    proposals = _call(tmp_path, f2_page_text="/*\nLine one\n*/", ocr_words=words)
-    assert len(proposals) == 1
-    assert proposals[0].box == (0, 0, 30, 10)
-
-
-def test_normalized_box_is_scaled_by_page_size(tmp_path: Path) -> None:
-    words = [
-        _word("Line", 0.0, 0.0, 0.10, 0.05, normalized=True),
-        _word("one", 0.12, 0.0, 0.30, 0.05, normalized=True),
-    ]
-    proposals = _call(tmp_path, f2_page_text="/*\nLine one\n*/", ocr_words=words)
-    assert proposals[0].box == (0, 0, 30, 10)
-
-
-def test_mismatch_proposes_the_gutenberg_words(tmp_path: Path) -> None:
-    words = [_word("Gamma", 0, 0, 10, 10), _word("Delta", 12, 0, 30, 10)]
-    proposals = _call(
-        tmp_path,
-        f2_page_text="<table><tr><td>Alpha</td><td>Beta</td></tr></table>",
-        ocr_words=words,
-        gutenberg_table_texts=("Gamma Delta",),
-        gutenberg_attached=True,
-    )
-    assert len(proposals) == 1
-    assert proposals[0].role.value == "table"
-    assert proposals[0].confidence == 0.7
-    assert proposals[0].evidence["sources"] == ["gutenberg_html"]
-    assert proposals[0].box == (0, 0, 30, 10)
-
-
-def test_empty_facet_digests_are_rejected(tmp_path: Path) -> None:
-    with pytest.raises(ValueError):
-        propose_text_layout(
-            project_root=tmp_path,
-            page_index=0,
-            page_key="001.png",
-            f2_page_text="/*\nLine one\n*/",
-            ocr_words=[_word("Line", 0, 0, 10, 10), _word("one", 12, 0, 30, 10)],
-            page_width=100,
-            page_height=200,
-            created_at="2026-11-07T00:00:00+00:00",
-            page_facet_digests={},
-            run_id="run-1",
-        )
-```
-
-- [ ] **Step 2: Run the tests and confirm they fail**
-
-Run this only after Task 4. The contracts import must succeed. The expected failure is the missing labeler function.
-
-Add a duplicate-ID test that calls the function successfully, snapshots `.pd-pages/region-proposals.jsonl`, then calls it with the same `run_id` for another page. Assert `ValueError`, unchanged log bytes, and exactly one run. Add an empty-ID test that asserts `ValueError` before any log write. Successful calls for two pages with distinct IDs must produce exactly two runs and their matching page proposals.
-
-Run: `cd /mnt/work/projects/pdomain/pdomain-ocr-labeler-spa && uv run pytest tests/unit/core/regions/test_text_layout.py -v`
-
-Expected: FAIL because `propose_text_layout` is missing.
-
-- [ ] **Step 3: Implement the matcher and append the run**
-
-Append the run before the proposals. Return the proposals that were written. Do not add a UI component. The existing region panel lists this log. Do not add a path dependency.
-
-If the labeler working tree has other uncommitted work, stop and report that.
-
-- [ ] **Step 4: Re-run the tests**
-
-Run the same pytest command. Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-cd /mnt/work/projects/pdomain/pdomain-ocr-labeler-spa
-git add src/pdomain_ocr_labeler_spa/core/regions/text_layout.py tests/unit/core/regions/test_text_layout.py
-git commit -m "feat: propose layout regions from F2 and Gutenberg text"
-```
+- [x] Verify each session has one owner, a dedicated project tab, a fresh brief, and an outbox/status file. Do not prompt the user's coordinator pane.
+- [x] Review the updated plan before dispatching product edits. The owner's request already authorizes coordinated execution; preserve that execution method.
+- [x] Let repository owners develop independent fixtures/helpers concurrently. Release cross-repo integration after the contracts wheel and exact interface examples are available.
+- [x] Inspect local commits/diffs and required review evidence. Run the prepared-book-to-labeler-export-to-training-reader fixture across the actual local wheels. Check legacy F2-only and legacy export cases too.
+- [x] Record what is implemented, what the browser verified, and any blocked checks. Run docgraph reindex and strict checks for changed documentation. Do not present launched sessions as completed implementation.
 
 ## What this plan leaves out
 
-The labeler does not yet call `propose_text_layout` when a page finishes OCR. Wiring that call is the next change after these tasks. It should pass `rounds/F2.json` for the current image filename, the page width and height, `created_at`, and `compute_page_facet_digests` for that page. Gutenberg table strings come from `gutenberg_table_texts` only for pages named by an accepted edition alignment.
+This pass does not publish packages, refresh public indexes, change OCR engines, run model training, infer bidirectional reading order, or reconstruct the entire CSS layout of a Gutenberg edition. It does not add a legacy word-identity migration system: detailed word-bound formatting review requires a prepared bundle with stored word IDs. It preserves the existing region-label schema while making reviewed formatting available beside it. Release work and training experiments follow the working proof.
 
-Accepting a proposal and exporting `regions/labels.json` already exist. This plan does not change that export and does not run training.
+## Implementation proof
+
+All four implementation tasks completed on 2026-11-08. The coordinator's fresh
+check passed 92 focused tests: 21 contracts, 12 source-data, 27 labeler, and 32
+training tests. The final cross-repository review found no actionable issues.
+
+Eight interactive Chromium checks exercised review and export. The final
+installed-wheel check loaded verse structure, both accepted paragraph columns
+with a shared group and reading order `0, 1`, and reviewed 2×2 table cells.
+Word IDs stayed stable after text and geometry corrections, while geometry
+snapshots changed to match the corrected boxes. The training reader forwarded
+the loaded records unchanged to a fake model without importing Torch.
+
+These are synthetic fixture and browser checks. They do not establish accepted
+production-corpus quality or improved trained-model quality. Detailed word-bound
+formatting review still requires prepared bundles with stored word IDs. The
+initial labeler gate used the local contracts wheel, preserved its prepared
+environment, and excluded registry Docker builds. The rollout stage must verify
+the published dependency through normal setup and required checks.
+
+The implementation commits were:
+
+| Repository | Reviewed implementation commit |
+| --- | --- |
+| `pdomain-book-contracts` | `94e4eef84a91c264c42b36097e49541eee4683ac` |
+| `pdomain-source-data` | `d101379f51f92b3322edd0f5e82844e9d43a1dd4` |
+| `pdomain-ocr-labeler-spa` | `92e6ef48a478b05a961cd171cba05161db3aaedc` |
+| `pdomain-ocr-training` | `5c5b83587534e332600a33421a2679d0007a9c5e` |
+
+## Rollout outcome
+
+After reviewing the proof, the owner authorized the contracts release, consumer
+dependency updates, local merges, and pushes on 2026-11-08. Contracts
+[`v0.2.1`](https://github.com/pdomain/pdomain-book-contracts/releases/tag/v0.2.1)
+was published from commit `94e4eef84a91c264c42b36097e49541eee4683ac`. The
+[pip index](https://pdomain.github.io/pdomain-index-pip/simple/) was published at
+commit `e30d081e654a34f7e8ec00b98bc731bb9c1bda0f`.
+A clean environment installed contracts `0.2.1` from the public index and imported
+the new layout APIs.
+
+All four product changes are merged and pushed. The coordinator independently
+verified these remote `master` commits:
+
+| Repository | Verified remote `master` commit |
+| --- | --- |
+| `pdomain-book-contracts` | `94e4eef84a91c264c42b36097e49541eee4683ac` |
+| `pdomain-source-data` | `4e30fd67cf5c0126422b8e22cf05991f65602d71` |
+| `pdomain-ocr-labeler-spa` | `2d35bef7828f2a1464cc3bd0ac8f9f9952299ec0` |
+| `pdomain-ocr-training` | `bc7ed72d55a76376b8f087c0f3fa62e1d98181bd` |
+
+All three consumers now require `pdomain-book-contracts>=0.2.1`. Their normal
+lockfiles resolve the published wheel, and their canonical environments import
+stable `0.2.1` without a local-wheel or sibling-path override.
+
+Normal checks against the published dependency passed:
+
+- Contracts release preflight: 55 tests, build, typing, lint, and strict docgraph.
+- Source-data: normal worktree and merged-master checks; 476 tests passed and
+  three opt-in mounted-corpus tests skipped.
+- Labeler: 2,181 backend tests, including all four Docker tests, and 2,240 frontend
+  tests. Eight Chromium cases passed against the published dependency. Docker
+  also imported the new layout and F2 APIs from contracts `0.2.1`.
+- Training: normal worktree and merged-master checks; 156 tests passed. The final
+  verse, columns, table, stable-ID, and refreshed-geometry proof passed with the
+  published dependency.
+
+The labeler merge was an exact fast-forward to the gated tree. Normal setup and
+11 integration tests passed in the canonical checkout. All four canonical product
+checkouts were clean after remote verification. Feature branches and worktrees
+were retained. No consumer package was tagged or released, and no real model
+training or corpus modification ran. Real-corpus acceptance and model quality
+remain separate work.
