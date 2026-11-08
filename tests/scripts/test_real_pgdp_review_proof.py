@@ -338,7 +338,7 @@ def test_public_proof_confirms_working_copy_page_kinds_before_proposals(
     }
 
 
-def test_public_proof_prefers_a_structured_proposal_for_region_review(
+def test_public_proof_reviews_both_members_of_a_structured_column_pair(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     requests: list[tuple[str, ...]] = []
@@ -366,7 +366,7 @@ def test_public_proof_prefers_a_structured_proposal_for_region_review(
                 "proposals": [
                     {"proposal_id": "plain-proposal", "role": "paragraph"},
                     {
-                        "proposal_id": "column-proposal",
+                        "proposal_id": "column-proposal-0",
                         "role": "paragraph",
                         "evidence": {
                             "layout_structure": {
@@ -377,8 +377,22 @@ def test_public_proof_prefers_a_structured_proposal_for_region_review(
                             }
                         },
                     },
+                    {
+                        "proposal_id": "column-proposal-1",
+                        "role": "paragraph",
+                        "evidence": {
+                            "layout_structure": {
+                                "kind": "column_flow",
+                                "column_group_id": "columns-1",
+                                "column_index": 1,
+                                "reading_order": 1,
+                            }
+                        },
+                    },
                 ]
             }
+        elif "region-review" in argv:
+            payload = {"generation": 8}
         return {
             "subject": "",
             "stage": "",
@@ -390,7 +404,7 @@ def test_public_proof_prefers_a_structured_proposal_for_region_review(
 
     monkeypatch.setattr(proof, "_run_json_command", run_command)
     proof.run_public_proof(
-        cases=[proof.ProofCase("projectIDone", "008.png", "verse_indent")],
+        cases=[proof.ProofCase("projectIDone", "020.png", "physical_columns_captions")],
         corpus_root=tmp_path / "corpus",
         source_python=tmp_path / "python",
         source_module="pdomain_source_data.pgdp_review_cli",
@@ -401,17 +415,14 @@ def test_public_proof_prefers_a_structured_proposal_for_region_review(
         review_decision="edited",
     )
 
-    region_review = next(argv for argv in requests if "region-review" in argv)
-    assert "column-proposal" in region_review
-    body = json.loads(region_review[region_review.index("--json") + 1])
-    assert body == {
-        "layout_structure": {
-            "kind": "column_flow",
-            "column_group_id": "columns-1",
-            "column_index": 0,
-            "reading_order": 0,
-        }
+    region_reviews = [argv for argv in requests if "region-review" in argv]
+    assert len(region_reviews) == 2
+    assert {argv[argv.index("region-review") + 3] for argv in region_reviews} == {
+        "column-proposal-0",
+        "column-proposal-1",
     }
+    bodies = [json.loads(argv[argv.index("--json") + 1]) for argv in region_reviews]
+    assert sorted(body["layout_structure"]["column_index"] for body in bodies) == [0, 1]
 
 
 def test_region_review_structure_evidence_requires_a_matching_reloaded_region() -> None:
@@ -451,6 +462,88 @@ def test_region_review_structure_evidence_requires_a_matching_reloaded_region() 
         )
         == "poetry"
     )
+
+
+def test_one_column_only_makes_physical_column_proof_incomplete(tmp_path: Path) -> None:
+    case = proof.ProofCase("project", "020.png", "physical_columns_captions")
+    report = build_setup_report(
+        cases=[case],
+        corpus_root=tmp_path / "corpus",
+        ocr_root=None,
+        mode="proof",
+    )
+    subject = "project/020.png"
+    before_group = {
+        "group_id": "group-1",
+        "ocr_text": "Alpha",
+        "box": {"x": 1},
+        "source_word_ids": ["source-1"],
+        "note": "",
+        "reviewed_text": None,
+    }
+    after_group = {**before_group, "note": f"real-proof:{subject}", "reviewed_text": "Alpha"}
+    operations: list[proof.PublicOperation] = [
+        {
+            "subject": subject,
+            "stage": "labeler_page_after_ocr",
+            "argv": [],
+            "status": "ok",
+            "payload": {"page_text_ocr": "Alpha", "page_text_gt": "Alpha"},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_inspect",
+            "argv": [],
+            "status": "ok",
+            "payload": {"result": {"groups": [before_group]}},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_inspect_after_reload",
+            "argv": [],
+            "status": "ok",
+            "payload": {"result": {"groups": [after_group]}},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_proposals",
+            "argv": [],
+            "status": "ok",
+            "payload": {"proposals": [{"proposal_id": "column-0", "role": "paragraph"}]},
+            "error": None,
+        },
+        {
+            "subject": subject,
+            "stage": "labeler_page_after_region_review",
+            "argv": [],
+            "status": "ok",
+            "payload": {
+                "page_text_ocr": "Alpha",
+                "page_text_gt": "Alpha",
+                "regions": [
+                    {
+                        "confirmed": True,
+                        "role": "paragraph",
+                        "layout_structure": {
+                            "kind": "column_flow",
+                            "column_group_id": "columns-1",
+                            "column_index": 0,
+                        },
+                    }
+                ],
+            },
+            "error": None,
+        },
+    ]
+
+    proof.populate_proof_evidence(report=report, cases=[case], operations=operations)
+
+    evidence = report["cases"][0]["proof_evidence"]
+    assert evidence["behavior_observations"]["independent_columns"] == "genuine_mismatch"
+    assert evidence["status"] == "invariants_incomplete"
 
 
 def test_public_proof_does_not_propose_regions_after_page_kind_confirmation_failure(
@@ -543,6 +636,9 @@ def test_semantic_observations_do_not_pass_empty_or_null_evidence() -> None:
     assert numeric["not_poetry"] == "missing_proposal"
     assert formatter["formatter_or_tb_visible"] == "mismatch"
     assert verse["verse_stanzas_or_indents"] == "partial_unresolved"
+    assert proof._behavior_observations_complete(numeric) is False
+    assert proof._behavior_observations_complete(formatter) is False
+    assert proof._behavior_observations_complete(verse) is True
 
 
 def test_alignment_metrics_count_changed_groups_and_linked_relations() -> None:

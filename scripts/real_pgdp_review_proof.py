@@ -151,6 +151,9 @@ class SetupSummary(TypedDict):
     setup_ready_count: int
     setup_failed_count: int
     complete_selection: bool
+    behavior_verified_count: int
+    behavior_partial_count: int
+    behavior_failure_count: int
 
 
 class SetupReport(TypedDict):
@@ -289,6 +292,9 @@ def build_setup_report(
             "setup_ready_count": ready_count,
             "setup_failed_count": failed_count,
             "complete_selection": len(reports) == total_requested,
+            "behavior_verified_count": 0,
+            "behavior_partial_count": 0,
+            "behavior_failure_count": 0,
         },
         "integration": {
             "status": "blocked_pending_public_components",
@@ -975,42 +981,49 @@ def _run_region_review_sequence(
         stage="labeler_proposals",
     )
     operations.append(proposals)
-    target = _region_review_target(proposals)
-    if target is None:
-        region_review: PublicOperation = {
-            "subject": subject,
-            "stage": "labeler_region_review",
-            "argv": [],
-            "status": "ok",
-            "payload": proposals["payload"],
-            "error": "no genuine region proposal was returned",
-        }
+    targets = _region_review_targets(proposals, case=case)
+    if not targets:
+        region_reviews: list[PublicOperation] = [
+            {
+                "subject": subject,
+                "stage": "labeler_region_review",
+                "argv": [],
+                "status": "ok",
+                "payload": proposals["payload"],
+                "error": "no genuine region proposal was returned",
+            }
+        ]
     else:
-        command = (
-            *control_prefix,
-            "region-review",
-            labeler_project_id,
-            index,
-            target.proposal_id,
-            "accept",
-        )
-        if target.layout_structure is not None:
+        region_reviews = []
+        for target in targets:
             command = (
-                *command,
-                "--json",
-                json.dumps({"layout_structure": target.layout_structure}),
+                *control_prefix,
+                "region-review",
+                labeler_project_id,
+                index,
+                target.proposal_id,
+                "accept",
             )
-        region_review = _operation(
-            _run_json_command(
-                command,
-                request=None,
-                timeout_seconds=timeout_seconds,
-            ),
-            subject=subject,
-            stage="labeler_region_review",
-        )
-    operations.append(region_review)
-    region_generation = _payload_integer(region_review, "generation")
+            if target.layout_structure is not None:
+                command = (
+                    *command,
+                    "--json",
+                    json.dumps({"layout_structure": target.layout_structure}),
+                )
+            region_reviews.append(
+                _operation(
+                    _run_json_command(
+                        command,
+                        request=None,
+                        timeout_seconds=timeout_seconds,
+                    ),
+                    subject=subject,
+                    stage="labeler_region_review",
+                )
+            )
+    operations.extend(region_reviews)
+    final_region_review = region_reviews[-1]
+    region_generation = _payload_integer(final_region_review, "generation")
     if region_generation is None:
         operations.append(
             {
@@ -1018,7 +1031,7 @@ def _run_region_review_sequence(
                 "stage": "labeler_save_after_region_review",
                 "argv": [],
                 "status": "blocked",
-                "payload": region_review["payload"],
+                "payload": final_region_review["payload"],
                 "error": "region review response has no published generation field",
             }
         )
@@ -1100,15 +1113,18 @@ class RegionReviewTarget:
     layout_structure: dict[str, object] | None
 
 
-def _region_review_target(operation: PublicOperation) -> RegionReviewTarget | None:
-    """Prefer a proposal with published structure evidence over a generic box."""
+def _region_review_targets(
+    operation: PublicOperation, *, case: ProofCase | None
+) -> tuple[RegionReviewTarget, ...]:
+    """Select one representative proposal, or both members of a real column pair."""
     payload = operation["payload"]
     if payload is None:
-        return None
+        return ()
     proposals = payload.get("proposals")
     if not isinstance(proposals, list):
-        return None
+        return ()
     generic_target: RegionReviewTarget | None = None
+    structured_targets: list[RegionReviewTarget] = []
     for proposal in proposals:
         if not isinstance(proposal, dict) or not isinstance(
             (proposal_id := proposal.get("proposal_id")), str
@@ -1116,10 +1132,41 @@ def _region_review_target(operation: PublicOperation) -> RegionReviewTarget | No
             continue
         structure = _proposal_layout_structure(proposal)
         if structure is not None:
-            return RegionReviewTarget(proposal_id=proposal_id, layout_structure=structure)
+            structured_targets.append(
+                RegionReviewTarget(proposal_id=proposal_id, layout_structure=structure)
+            )
+            continue
         if generic_target is None:
             generic_target = RegionReviewTarget(proposal_id=proposal_id, layout_structure=None)
-    return generic_target
+    if case is not None and case.intent == "physical_columns_captions":
+        column_pair = _column_pair_targets(structured_targets)
+        if column_pair:
+            return column_pair
+    if structured_targets:
+        return (structured_targets[0],)
+    return (generic_target,) if generic_target is not None else ()
+
+
+def _column_pair_targets(
+    targets: list[RegionReviewTarget],
+) -> tuple[RegionReviewTarget, ...]:
+    pairs: dict[str, dict[int, RegionReviewTarget]] = {}
+    for target in targets:
+        structure = target.layout_structure
+        if structure is None or structure.get("kind") != "column_flow":
+            continue
+        group_id = structure.get("column_group_id")
+        column_index = structure.get("column_index")
+        if (
+            isinstance(group_id, str)
+            and isinstance(column_index, int)
+            and not isinstance(column_index, bool)
+        ):
+            pairs.setdefault(group_id, {})[column_index] = target
+    for columns in pairs.values():
+        if 0 in columns and 1 in columns:
+            return columns[0], columns[1]
+    return ()
 
 
 def _proposal_layout_structure(proposal: dict[str, object]) -> dict[str, object] | None:
@@ -1216,9 +1263,14 @@ def populate_proof_evidence(
                 "edited_group_note_and_reviewed_text_survived_reload",
             )
         )
+        observations = _behavior_observations(case, after_page, after_inspect, proposals)
         evidence["status"] = (
             "verified"
-            if base_invariants_complete and structure_status in {"not_requested", "verified"}
+            if (
+                base_invariants_complete
+                and structure_status in {"not_requested", "verified"}
+                and _behavior_observations_complete(observations)
+            )
             else "invariants_incomplete"
         )
         evidence["raw_ocr_text"] = before_ocr
@@ -1235,9 +1287,7 @@ def populate_proof_evidence(
         evidence["region_count_after_reload"] = _list_length(after_page, "regions")
         evidence["proposal_count"] = _list_length(proposals, "proposals")
         evidence["invariants"] = invariants
-        evidence["behavior_observations"] = _behavior_observations(
-            case, after_page, after_inspect, proposals
-        )
+        evidence["behavior_observations"] = observations
         _populate_metrics(case_report["metrics"], before_inspect, before_groups)
 
 
@@ -1553,6 +1603,34 @@ def _behavior_observations(
     return observations
 
 
+def _behavior_observations_complete(observations: dict[str, str]) -> bool:
+    failed_statuses = {
+        "genuine_mismatch",
+        "incomplete_source_evidence",
+        "mismatch",
+        "missing_proposal",
+    }
+    return not any(status in failed_statuses for status in observations.values())
+
+
+def populate_behavior_summary(report: SetupReport) -> None:
+    """Count verified, honestly partial, and failed behavior observations."""
+    verified = 0
+    partial = 0
+    failed = 0
+    for case_report in report["cases"]:
+        observations = case_report["proof_evidence"]["behavior_observations"]
+        if not _behavior_observations_complete(observations):
+            failed += 1
+        elif "partial_unresolved" in observations.values():
+            partial += 1
+        else:
+            verified += 1
+    report["summary"]["behavior_verified_count"] = verified
+    report["summary"]["behavior_partial_count"] = partial
+    report["summary"]["behavior_failure_count"] = failed
+
+
 def _proposal_records(payload: dict[str, object] | None) -> list[dict[str, object]]:
     if payload is None or not isinstance((proposals := payload.get("proposals")), list):
         return []
@@ -1834,6 +1912,7 @@ def main(argv: list[str] | None = None) -> int:
             populate_proof_evidence(
                 report=report, cases=cases, operations=report["public_operations"]
             )
+            populate_behavior_summary(report)
             report["integration"]["status"] = "public_workflow_evidence_collected"
             _write_report(report, destination)
             evidence_complete = all(
