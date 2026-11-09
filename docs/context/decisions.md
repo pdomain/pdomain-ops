@@ -579,3 +579,19 @@ the end distinguishes current repository evidence from historical claims.
   [`lint-deviations.md`](../process/lint-deviations.md). The historical ledger
   records its November verification scope without refreshing July claims
   about sibling implementations.
+
+### 2026-11-09 Retired: Book-contracts extraction handoff (2026-09-02)
+
+- Old path: `docs/handoff/2026-09-02-045132-book-contracts-extraction.md`
+- Outcome: superseded
+- Superseded by: [extraction plan](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md),
+  whose 2026-11-07 verification section records the outcome
+- Removal commit: (fill after commit)
+- Rationale kept: Contracts publish to the package index, now at v0.3.0. Book-tools,
+  pgdp-api-client, the labeler, source-data and ocr-cli pin it there. Synth has no contracts
+  dependency, so its repoint was not needed. The layout spec corrections are `3f1b53e` and
+  `43615bc`. The contracts architecture overview records the structural Protocols in
+  `legacy_projection` and the vendored `spdx_licenses.json`. One reason lived only in the
+  handoff. Book-tools registers its `BoundingBox` image-ops provider in `geometry/image_ops.py`,
+  not `geometry/__init__.py`, so that importing `pdomain_book_tools.geometry` does not load cv2.
+- Remaining work: Task 2, data rescue and retiring the `pd-` repos, is in current state and the plan
