@@ -586,7 +586,7 @@ the end distinguishes current repository evidence from historical claims.
 - Outcome: superseded
 - Superseded by: [extraction plan](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md),
   whose 2026-11-07 verification section records the outcome
-- Removal commit: (fill after commit)
+- Removal commit: `674eb5da`
 - Rationale kept: Contracts publish to the package index, now at v0.3.0. Book-tools,
   pgdp-api-client, the labeler, source-data and ocr-cli pin it there. Synth has no contracts
   dependency, so its repoint was not needed. The layout spec corrections are `3f1b53e` and
