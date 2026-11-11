@@ -1,8 +1,139 @@
 import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import NoReturn
+
+import pytest
 
 from pdomain_ops.gpu import device_probe
 from pdomain_ops.gpu.device_probe import DeviceInfoEntry, list_devices
+
+_ONE_MIB = 1024 * 1024
+_CARD_BYTES = 8192 * _ONE_MIB
+_OOM_MESSAGE = "CUDA error: out of memory\nSearch for `cudaErrorMemoryAllocation' ..."
+
+
+def _raise_oom(*_args: object) -> NoReturn:
+    raise RuntimeError(_OOM_MESSAGE)
+
+
+def _install_fake_torch(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    mem_get_info: Callable[[int], tuple[int, int]] = lambda _i: (_CARD_BYTES, _CARD_BYTES),
+    get_device_name: Callable[[int], str] = lambda _i: "Fake GPU",
+    is_available: Callable[[], bool] = lambda: True,
+) -> None:
+    cuda = SimpleNamespace(
+        is_available=is_available,
+        device_count=lambda: 1,
+        mem_get_info=mem_get_info,
+        get_device_name=get_device_name,
+    )
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=cuda))
+
+
+def test_probe_reports_device_when_memory_query_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=_raise_oom)
+
+    [device] = device_probe._probe_cuda()
+
+    assert device.id == "cuda:0"
+    assert device.label == "Fake GPU"
+    assert device.kind == "cuda"
+    assert device.available is False
+    assert device.vram_total_mb is None
+    assert device.vram_free_mb is None
+    assert device.reason == "CUDA memory query failed: CUDA error: out of memory"
+
+
+def test_probe_reports_device_when_query_error_has_no_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise_blank(*_args: object) -> NoReturn:
+        raise RuntimeError
+
+    _install_fake_torch(monkeypatch, mem_get_info=_raise_blank)
+
+    [device] = device_probe._probe_cuda()
+
+    assert device.available is False
+    assert device.reason == "CUDA memory query failed: "
+
+
+def test_probe_marks_card_with_no_free_memory_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=lambda _i: (0, _CARD_BYTES))
+
+    [device] = device_probe._probe_cuda()
+
+    assert device.available is False
+    assert device.vram_free_mb == 0
+    assert device.vram_total_mb == 8192
+    assert device.reason == "No free GPU memory."
+
+
+def test_probe_keeps_card_with_free_memory_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=lambda _i: (_ONE_MIB, _CARD_BYTES))
+
+    [device] = device_probe._probe_cuda()
+
+    assert device.available is True
+    assert device.vram_free_mb == 1
+    assert device.reason is None
+
+
+def test_probe_returns_nothing_when_cuda_availability_check_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(monkeypatch, is_available=_raise_oom)
+
+    assert device_probe._probe_cuda() == []
+
+
+def test_unnamed_busy_card_is_listed_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=_raise_oom, get_device_name=_raise_oom)
+    monkeypatch.setattr(device_probe, "_probe_mps", list)
+    monkeypatch.setattr(
+        device_probe,
+        "_detect_unusable_nvidia_hardware",
+        lambda: ["NVIDIA GeForce RTX 5070 Ti"],
+    )
+
+    devices = list_devices()
+
+    assert [d.id for d in devices] == ["cuda:0", "cpu"]
+    assert devices[0].label == "NVIDIA GeForce RTX 5070 Ti"
+    assert devices[0].available is False
+
+
+def test_unnamed_busy_card_without_detected_hardware_gets_generic_label(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=_raise_oom, get_device_name=_raise_oom)
+    monkeypatch.setattr(device_probe, "_detect_unusable_nvidia_hardware", list)
+
+    [device] = device_probe._probe_cuda()
+
+    assert device.label == "CUDA device 0"
+
+
+def test_unnamed_busy_card_ignores_hardware_names_when_counts_differ(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=_raise_oom, get_device_name=_raise_oom)
+    monkeypatch.setattr(
+        device_probe,
+        "_detect_unusable_nvidia_hardware",
+        lambda: ["NVIDIA GeForce RTX 3070", "NVIDIA GeForce RTX 5070 Ti"],
+    )
+
+    [device] = device_probe._probe_cuda()
+
+    assert device.label == "CUDA device 0"
 
 
 def test_list_devices_always_includes_cpu():

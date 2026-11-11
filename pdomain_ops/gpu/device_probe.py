@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+_log = logging.getLogger(__name__)
 _PROC_NVIDIA_GPUS = Path("/proc/driver/nvidia/gpus")
 _NVIDIA_UNUSABLE_REASON = "NVIDIA GPU detected, but CUDA is not usable by PyTorch."
 _LSPCI_CONTROLLER_RE = re.compile(
@@ -30,27 +33,57 @@ class DeviceInfoEntry:
     reason: str | None = None
 
 
+def _cuda_device_label(torch_module: Any, index: int, device_count: int) -> str:
+    try:
+        return str(torch_module.cuda.get_device_name(index))
+    except RuntimeError:
+        # A name from the hardware scan keeps list_devices from adding this card
+        # a second time as an unusable NVIDIA device. Scan order only lines up
+        # with CUDA indices when both see the same set of cards.
+        hardware_names = _detect_unusable_nvidia_hardware()
+        if len(hardware_names) == device_count:
+            return hardware_names[index]
+        return f"CUDA device {index}"
+
+
+def _probe_cuda_device(torch_module: Any, index: int, device_count: int) -> DeviceInfoEntry:
+    try:
+        free, total = torch_module.cuda.mem_get_info(index)
+    except RuntimeError as exc:
+        first_line = str(exc).partition("\n")[0]
+        return DeviceInfoEntry(
+            id=f"cuda:{index}",
+            label=_cuda_device_label(torch_module, index, device_count),
+            available=False,
+            kind="cuda",
+            reason=f"CUDA memory query failed: {first_line}",
+        )
+    free_mb = free // (1024 * 1024)
+    has_free_memory = free_mb > 0
+    return DeviceInfoEntry(
+        id=f"cuda:{index}",
+        label=_cuda_device_label(torch_module, index, device_count),
+        vram_total_mb=total // (1024 * 1024),
+        vram_free_mb=free_mb,
+        available=has_free_memory,
+        kind="cuda",
+        reason=None if has_free_memory else "No free GPU memory.",
+    )
+
+
 def _probe_cuda() -> list[DeviceInfoEntry]:
     try:
         import torch
     except ImportError:
         return []
-    if not torch.cuda.is_available():
+    try:
+        if not torch.cuda.is_available():
+            return []
+        device_count = torch.cuda.device_count()
+    except RuntimeError:
+        _log.warning("CUDA availability check failed", exc_info=True)
         return []
-    out: list[DeviceInfoEntry] = []
-    for i in range(torch.cuda.device_count()):
-        free, total = torch.cuda.mem_get_info(i)
-        out.append(
-            DeviceInfoEntry(
-                id=f"cuda:{i}",
-                label=torch.cuda.get_device_name(i),
-                vram_total_mb=total // (1024 * 1024),
-                vram_free_mb=free // (1024 * 1024),
-                available=True,
-                kind="cuda",
-            )
-        )
-    return out
+    return [_probe_cuda_device(torch, index, device_count) for index in range(device_count)]
 
 
 def _probe_mps() -> list[DeviceInfoEntry]:
