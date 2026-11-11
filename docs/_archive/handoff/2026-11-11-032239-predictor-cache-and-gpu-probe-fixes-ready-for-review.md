@@ -1,19 +1,21 @@
 ---
-kind: handoff
-status: "active"
-created: "2026-11-11"
+kind: archive
+status: retired
 created_at: "2026-11-11T03:22:38Z"
 owner: "CT"
 branch: "worktree-fix-predictor-cache-gpu-probe"
 scope: "predictor-cache-gpu-probe"
 worktree: "/mnt/work/projects/pdomain/pdomain-ops/.claude/worktrees/fix-predictor-cache-gpu-probe"
 base_commit: "b81c0ff9bb3c327447038b02ff1191bb22a0556b"
-supersedes: ""
 handoff_reason: "user_requested"
 host: "claude-code"
+created: "2026-11-11"
+last_verified: "2026-11-11"
 ---
 
 # Predictor cache and GPU probe fixes ready for review
+
+> **Retired — superseded by `docs/handoff/2026-11-11-043359-runbook-corrected-gpu-probe-acceptance-still-open.md`.**
 
 ## Goal
 
