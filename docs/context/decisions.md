@@ -601,7 +601,7 @@ the end distinguishes current repository evidence from historical claims.
 - Old path: `docs/issues/2026-08-08-predictor-cache-not-thread-safe.md`
 - Outcome: implemented in `04fa5db`
 - Superseded by: [Batched OCR dispatch](../architecture/batched-ocr-dispatch.md)
-- Removal commit: (fill after commit)
+- Removal commit: `728e5f2`
 - Rationale kept: The defect was the non-atomic read, build and write, so the fix is a
   lock around that sequence and not a concurrent map. One module lock covers the build
   but not the OCR run. The issue recorded the risk as duplicate build time and higher
