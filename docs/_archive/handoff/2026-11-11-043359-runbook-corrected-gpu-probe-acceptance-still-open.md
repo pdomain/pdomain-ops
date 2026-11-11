@@ -1,7 +1,6 @@
 ---
-kind: handoff
-status: "active"
-created: "2026-11-11"
+kind: archive
+status: retired
 created_at: "2026-11-11T04:33:59Z"
 owner: "CT"
 branch: "worktree-fix-predictor-cache-gpu-probe"
@@ -11,9 +10,13 @@ base_commit: "373c924558f1f7234b0a5e2aa6fd362d3136bfdd"
 supersedes: "2026-11-11-032239-predictor-cache-and-gpu-probe-fixes-ready-for-review.md"
 handoff_reason: "stopping"
 host: "claude-code"
+created: "2026-11-11"
+last_verified: "2026-11-11"
 ---
 
 # Runbook corrected, GPU probe acceptance still open
+
+> **Retired — superseded by `docs/handoff/2026-11-11-084431-gpu-probe-hardware-scan-runs-once.md`.**
 
 ## Goal
 
