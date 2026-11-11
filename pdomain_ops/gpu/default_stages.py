@@ -36,9 +36,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pdomain_ops.gpu.local_stage import LocalStageDispatcher
 
 _log = logging.getLogger(__name__)
@@ -52,6 +55,24 @@ _log = logging.getLogger(__name__)
 # the key because DocTR bakes det_bs / reco_bs into the predictor at build
 # time; a predictor built for det_bs=4 must not be reused for det_bs=2.
 _predictor_cache: dict[tuple[str, str, int, int], Any] = {}
+_predictor_build_lock = threading.Lock()
+
+
+def get_or_build_predictor(
+    cache_key: tuple[str, str, int, int],
+    build: Callable[[], Any],
+) -> Any:
+    """Return the cached predictor for *cache_key*, building it at most once."""
+    predictor = _predictor_cache.get(cache_key)
+    if predictor is not None:
+        return predictor
+    # Held across the build: releasing it around build() reopens the race.
+    with _predictor_build_lock:
+        predictor = _predictor_cache.get(cache_key)
+        if predictor is None:
+            predictor = build()
+            _predictor_cache[cache_key] = predictor
+        return predictor
 
 
 def register_default_stages(dispatcher: LocalStageDispatcher) -> None:
@@ -215,10 +236,10 @@ def _make_doctr_finetuned_sync(
 
         # 4-tuple key: batch-size dims are baked into the predictor at build time.
         cache_key = (det_path, reco_path, det_bs, reco_bs)
-        predictor = _predictor_cache.get(cache_key)
-        if predictor is None:
-            predictor = get_finetuned_torch_doctr_predictor(det_path, reco_path)
-            _predictor_cache[cache_key] = predictor
+        predictor = get_or_build_predictor(
+            cache_key,
+            lambda: get_finetuned_torch_doctr_predictor(det_path, reco_path),
+        )
 
         doc, _rotation = Document.from_image_ocr_via_doctr(
             image=image_path,
