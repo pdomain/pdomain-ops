@@ -25,7 +25,7 @@ Use this flow when a person or LLM needs to prepare selected corpus pages and re
 
 ## Preconditions
 
-This feature is local development work. The published contracts 0.2.1 package does not contain its new matching APIs. Use the coordinated feature worktrees and final reviewed local contracts wheel described in `/tmp/pdomain-p3-f2-20261108/contracts-ready.json`.
+A new install does not need a local contracts wheel, because the published contracts `v0.3.0` package contains the matching APIs. Contracts 0.2.1 does not contain them. The labeler and source-data master branches require `>=0.3.0`. As checked on 2026-11-10, no labeler release tag contains this feature yet. The installed build below is still a local development build. It predates `v0.3.0` and has contracts `0.2.2.dev1+g1bd8261b5` in its own virtual environment.
 
 The labeler needs Tesseract with `eng`, a configured corpus root, a Python interpreter that can run the source-data JSON CLI, and a writable books folder outside the corpus. Prepared books must be written under the labeler's configured books folder. Loading a book from another folder returns `project_outside_source_root`.
 
@@ -38,7 +38,7 @@ BASE_URL=http://127.0.0.1:8795
 "$CONTROL" --base-url "$BASE_URL" state
 ```
 
-Check `/tmp/pdomain-p3-f2-20261108/labeler-artifact-ready.json` for the current installed version, server mode and readiness. An `api_only` server supports automation but does not serve the browser UI. Do not treat a restart marker as a live server.
+`/mnt/work/projects/pdomain/.artifacts/tmp-archive-20261110/pdomain-p3-f2-20261108/labeler-artifact-ready.json` records this build's version, server mode and readiness as of 2026-11-08. Because it is an archived record, use `state` to check the server that is running now. Its paths that start with `/tmp/pdomain-p3-f2-20261108` now live under that archive folder. An `api_only` server supports automation but does not serve the browser UI. Do not treat a restart marker as a live server.
 
 To start a separate normal-mode server from that installed build, choose an unused port and keep its files outside the corpus. This example uses port 8794 and the bundled frontend.
 
@@ -69,7 +69,7 @@ curl -fsS "$BASE_URL/healthz"
 "$CONTROL" --base-url "$BASE_URL" state
 ```
 
-Confirm that Tesseract and PGDP preparation are available. Open that URL in the browser; a missing frontend must be fixed before browser verification. The source interpreter above runs the final built wheel outside its checkout; its path is recorded in `source-ready.json`.
+Confirm that Tesseract and PGDP preparation are available. Open that URL in the browser. Fix a missing frontend before browser verification. The source interpreter above runs the final built wheel outside its checkout. The `source-ready.json` file in the same archive folder records the wheel smoke environment at its old `/tmp` location. That environment is now at `artifacts/source/wheel-smoke-env` in that folder.
 
 ## Steps
 
