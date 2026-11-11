@@ -595,3 +595,15 @@ the end distinguishes current repository evidence from historical claims.
   handoff. Book-tools registers its `BoundingBox` image-ops provider in `geometry/image_ops.py`,
   not `geometry/__init__.py`, so that importing `pdomain_book_tools.geometry` does not load cv2.
 - Remaining work: Task 2, data rescue and retiring the `pd-` repos, is in current state and the plan
+
+### 2026-11-10 Retired: Concurrent OCR jobs can each build a duplicate DocTR predictor
+
+- Old path: `docs/issues/2026-08-08-predictor-cache-not-thread-safe.md`
+- Outcome: implemented in `04fa5db`
+- Superseded by: [Batched OCR dispatch](../architecture/batched-ocr-dispatch.md)
+- Removal commit: (fill after commit)
+- Rationale kept: The defect was the non-atomic read, build and write, so the fix is a
+  lock around that sequence and not a concurrent map. One module lock covers the build
+  but not the OCR run. The issue recorded the risk as duplicate build time and higher
+  peak memory, not wrong OCR text. No real CUDA race or lasting memory leak was reproduced.
+- Remaining work: none

@@ -212,7 +212,6 @@ maintenance obligation under `CONVENTIONS.md`; it is not a migration bet.
 Both [current state](current-state.md) and [the issue index](../issues/README.md)
 list the open reports.
 
-- [Concurrent OCR jobs can each build a duplicate DocTR predictor](../issues/2026-08-08-predictor-cache-not-thread-safe.md)
 - [The device probe raises instead of reporting when the GPU is full](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
 - [Weekly dep-refresh cannot auto-land in this repo](../issues/2026-08-08-dep-refresh-cannot-auto-land.md)
 

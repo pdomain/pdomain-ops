@@ -22,8 +22,7 @@ Level: I1
 
 ## Remaining work
 
-- The predictor cache is still an unguarded check-then-set. [Concurrent OCR jobs can each build a duplicate DocTR predictor](2026-08-08-predictor-cache-not-thread-safe.md)
-- The CUDA probe still lets memory-query failures escape and marks queried CUDA devices available regardless of free memory. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+- The CUDA probe fix is committed, but its check against the three `pdomain-ocr-simple-gui` tests on a full GPU has not run. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
 - Weekly dep-refresh auto-land is still open. Commit `7ff9c7d` removed the GitHub workflows. Branch protection on master is off. Thirteen `dep-refresh/*` branches remain on origin. Closing the issue needs an owner decision. [Weekly dep-refresh cannot auto-land in this repo](2026-08-08-dep-refresh-cannot-auto-land.md)
 - Book-contracts extraction still needs evidence for data rescue, digest compatibility of stored artifacts, and repository retirement. The package move and checked consumer repoints exist. [Extract Book Contracts and Retire the pd- Repos](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md)
 - The suite work order still needs proof of production proposal wiring, accepted corpus quality, and a usable model and checkpoint. Region review, geometry detectors, and layout training interfaces now exist. [Suite status and where to spend agent time](../plans/2026-09-12-suite-status-and-agent-allocation.md)

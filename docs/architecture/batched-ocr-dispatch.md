@@ -2,7 +2,7 @@
 Status: built
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-11-07
+Last verified: 2026-11-10
 Kind: architecture
 ---
 
@@ -39,8 +39,13 @@ unchanged.
 
 CPU and GPU use the same batched worker. Each batch runs in the event loop's
 default executor; the dispatcher does not serialize concurrent batch calls.
-Predictor cache lookup and construction are also unguarded. Callers must not
-assume that dispatch enforces one active OCR job or one predictor build.
+Predictor lookup and construction go through `get_or_build_predictor`, which
+builds each cache key once. Its single module lock covers the build but not the
+OCR run, so batches stay concurrent. Cold builds for different keys take turns.
+The dispatcher does its first lookup in the executor, so waiting for a build
+does not block the event loop. A build that raises caches nothing and can be
+retried. Callers must not assume
+that dispatch enforces one active OCR job.
 Consumer orchestration may split work into chunks to retain earlier results
 when a later chunk fails. Chunk size and DocTR's internal detection batch size
 remain separate controls.
@@ -77,5 +82,7 @@ transports are unbuilt. Their stubs must not be described as available backends.
   `_tbd/ocr-container-docs/archive/plans/2026-05-16-phase-1-7-gpu-adapter-migration.md`,
   `_tbd/ocr-container-docs/specs/2026-05-16-cross-cut-design.md`
 - **Verified:** 2026-11-07 by reading the source and focused tests above.
-  These tests use OCR doubles; they do not measure real GPU capacity or prove
-  safe concurrent predictor use.
+  These tests use OCR doubles; they do not measure real GPU capacity.
+- **Verified:** 2026-11-10 by `tests/gpu/test_predictor_cache_concurrency.py`.
+  Two threads racing on one cold key build one predictor at both call sites.
+  The test uses a stand-in builder on CPU, not a real CUDA run.
