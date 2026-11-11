@@ -177,17 +177,16 @@ def test_list_devices_scans_hardware_once_when_name_and_memory_queries_fail(
     assert len(calls) == 1
 
 
-def test_list_devices_skips_label_scan_when_names_are_known(
+def test_probe_skips_hardware_scan_when_names_are_known(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_torch(monkeypatch, mem_get_info=_raise_oom, device_count=2)
-    monkeypatch.setattr(device_probe, "_probe_mps", list)
-    calls = _counting_hardware_scan(monkeypatch, ["Fake GPU"])
+    calls = _counting_hardware_scan(monkeypatch, ["NVIDIA RTX A", "NVIDIA RTX B"])
 
-    devices = list_devices()
+    devices = device_probe._probe_cuda()
 
-    assert [d.id for d in devices] == ["cuda:0", "cuda:1", "cpu"]
-    assert len(calls) == 1
+    assert [d.label for d in devices] == ["Fake GPU", "Fake GPU"]
+    assert calls == []
 
 
 def test_list_devices_always_includes_cpu():
