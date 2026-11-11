@@ -41,6 +41,9 @@ made these changes:
 - If the device name query also fails and the hardware scan finds as many cards
   as CUDA, the label comes from the scan, so `list_devices` does not list the
   card twice. Otherwise the label is `CUDA device N`.
+- The hardware scan runs at most once per `list_devices` call, however many
+  cards fail both queries. Before this, each such card ran its own scan of
+  `nvidia-smi`, `/proc` and `lspci`, and `list_devices` ran one more.
 
 Criteria 1 to 3 are met. `tests/gpu/test_device_probe.py` simulates each failure
 with a fake `torch` module, so no card was used. Criterion 4 is not verified: the

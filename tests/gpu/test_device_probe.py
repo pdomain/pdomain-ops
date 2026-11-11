@@ -25,10 +25,11 @@ def _install_fake_torch(
     mem_get_info: Callable[[int], tuple[int, int]] = lambda _i: (_CARD_BYTES, _CARD_BYTES),
     get_device_name: Callable[[int], str] = lambda _i: "Fake GPU",
     is_available: Callable[[], bool] = lambda: True,
+    device_count: int = 1,
 ) -> None:
     cuda = SimpleNamespace(
         is_available=is_available,
-        device_count=lambda: 1,
+        device_count=lambda: device_count,
         mem_get_info=mem_get_info,
         get_device_name=get_device_name,
     )
@@ -136,6 +137,59 @@ def test_unnamed_busy_card_ignores_hardware_names_when_counts_differ(
     assert device.label == "CUDA device 0"
 
 
+def _counting_hardware_scan(monkeypatch: pytest.MonkeyPatch, names: list[str]) -> list[int]:
+    calls: list[int] = []
+
+    def _scan() -> list[str]:
+        calls.append(1)
+        return list(names)
+
+    monkeypatch.setattr(device_probe, "_detect_unusable_nvidia_hardware", _scan)
+    return calls
+
+
+def test_probe_scans_hardware_once_for_several_unnamed_busy_cards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(
+        monkeypatch, mem_get_info=_raise_oom, get_device_name=_raise_oom, device_count=2
+    )
+    calls = _counting_hardware_scan(monkeypatch, ["NVIDIA RTX A", "NVIDIA RTX B"])
+
+    devices = device_probe._probe_cuda()
+
+    assert [d.label for d in devices] == ["NVIDIA RTX A", "NVIDIA RTX B"]
+    assert len(calls) == 1
+
+
+def test_list_devices_scans_hardware_once_when_name_and_memory_queries_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(
+        monkeypatch, mem_get_info=_raise_oom, get_device_name=_raise_oom, device_count=2
+    )
+    monkeypatch.setattr(device_probe, "_probe_mps", list)
+    calls = _counting_hardware_scan(monkeypatch, ["NVIDIA RTX A", "NVIDIA RTX B"])
+
+    devices = list_devices()
+
+    assert [d.id for d in devices] == ["cuda:0", "cuda:1", "cpu"]
+    assert len(calls) == 1
+
+
+def test_list_devices_skips_label_scan_when_names_are_known(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_fake_torch(monkeypatch, mem_get_info=_raise_oom, device_count=2)
+    monkeypatch.setattr(device_probe, "_probe_mps", list)
+    calls = _counting_hardware_scan(monkeypatch, ["Fake GPU"])
+
+    devices = list_devices()
+
+    assert [d.id for d in devices] == ["cuda:0", "cuda:1", "cpu"]
+    assert len(calls) == 1
+
+
 def test_list_devices_always_includes_cpu():
     devices = list_devices()
     assert any(d.id == "cpu" for d in devices)
@@ -147,7 +201,7 @@ def test_list_devices_always_includes_cpu():
 def test_cuda_entries_have_vram(monkeypatch):
     monkeypatch.setattr(
         "pdomain_ops.gpu.device_probe._probe_cuda",
-        lambda: [
+        lambda _hardware: [
             DeviceInfoEntry(id="cuda:0", label="Fake GPU", vram_total_mb=8192, vram_free_mb=4096)
         ],
     )
@@ -179,7 +233,7 @@ def test_mps_not_included_when_unavailable(monkeypatch):
 def test_detect_nvidia_hardware_from_lspci_when_torch_cuda_unavailable(monkeypatch) -> None:
     """NVIDIA hardware presence is separate from CUDA runtime usability."""
 
-    monkeypatch.setattr(device_probe, "_probe_cuda", list)
+    monkeypatch.setattr(device_probe, "_probe_cuda", lambda _hardware: [])
     monkeypatch.setattr(device_probe, "_probe_mps", list)
     monkeypatch.setattr(device_probe, "_nvidia_smi_names", list)
     monkeypatch.setattr(device_probe, "_proc_nvidia_names", list)
@@ -206,7 +260,7 @@ def test_detect_nvidia_hardware_deduplicates_against_cuda_devices(monkeypatch) -
     monkeypatch.setattr(
         device_probe,
         "_probe_cuda",
-        lambda: [
+        lambda _hardware: [
             device_probe.DeviceInfoEntry(
                 id="cuda:0",
                 label="NVIDIA GeForce RTX 3070",
