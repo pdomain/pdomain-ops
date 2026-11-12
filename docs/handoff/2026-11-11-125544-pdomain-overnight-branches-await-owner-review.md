@@ -126,7 +126,7 @@ Other records:
 - Usage readings: `/mnt/work/projects/pdomain/.artifacts/night-20261110/usage.log`
 - Pre-overnight patches and session output: `/mnt/work/projects/pdomain/.artifacts/handoff-20261110/`
 - Former `/tmp` files, including the 2026-11-08 proof reports: `/mnt/work/projects/pdomain/.artifacts/tmp-archive-20261110/`
-- Suite work order: `docs/plans/2026-09-12-suite-status-and-agent-allocation.md`
+- Suite roadmap: `docs/context/intent-map.md`
 
 ## Resume steps
 

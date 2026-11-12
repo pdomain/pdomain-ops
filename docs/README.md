@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-05-19
-Last verified: 2026-11-06
+Last verified: 2026-11-12
 Kind: process
 ---
 
@@ -29,7 +29,8 @@ keep a parallel archive tree.
 
 Remaining work is the short list in
 [`docs/context/current-state.md`](context/current-state.md) and
-[`docs/issues/README.md`](issues/README.md).
+[`docs/issues/README.md`](issues/README.md). The suite roadmap is
+[`docs/context/intent-map.md`](context/intent-map.md).
 
 Open issue reports live under [`docs/issues/`](issues/README.md).
 

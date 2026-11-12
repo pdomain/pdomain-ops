@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-11-08
-Last verified: 2026-11-08
+Last verified: 2026-11-12
 Kind: runbook
 ---
 
@@ -15,17 +15,17 @@ Use the labeler's JSON control client to prepare PGDP pages, run scan OCR, inspe
 - **Kind:** runbook
 - **Status:** active
 - **Owner:** CT
-- **Last verified:** 2026-11-08
+- **Last verified:** 2026-11-12
 - **Read when:** operating the development P3/F2 review flow or running its real-data proof.
 - **Search terms:** PGDP, P3, F2, API, automation, viewer, Tesseract, real proof
 
 ## Trigger
 
-Use this flow when a person or LLM needs to prepare selected corpus pages and review their formatting against actual scan OCR. The implementation and measured outcomes are tracked in the [P3/F2 plan](../plans/2026-11-08-p3-f2-review-api.md).
+Use this flow when a person or LLM needs to prepare selected corpus pages and review their formatting against actual scan OCR. Shipped behavior and measured outcomes are in [layout review](../architecture/layout-review.md).
 
 ## Preconditions
 
-This feature is local development work. The published contracts 0.2.1 package does not contain its new matching APIs. Use the coordinated feature worktrees and final reviewed local contracts wheel described in `/tmp/pdomain-p3-f2-20261108/contracts-ready.json`.
+Contracts `v0.3.0` (`1bd8261`) contains the matching APIs. Labeler and source-data masters require `pdomain-book-contracts>=0.3.0`. The commands below still name the 2026-11-08 proof environment. Receipts that were under `/tmp/pdomain-p3-f2-20261108` are archived at `/mnt/work/projects/pdomain/.artifacts/tmp-archive-20261110/pdomain-p3-f2-20261108/`.
 
 The labeler needs Tesseract with `eng`, a configured corpus root, a Python interpreter that can run the source-data JSON CLI, and a writable books folder outside the corpus. Prepared books must be written under the labeler's configured books folder. Loading a book from another folder returns `project_outside_source_root`.
 
@@ -210,7 +210,7 @@ jq . "$REVIEW_ROOT/data/doctr-export/$PROJECT_ID/all/regions/structure.json"
 
 ## Verification
 
-The real-data proof selects nine pages across Poems, European Statistics and Century magazine. Keep every selected page in the report, including partial and exhausted alignments. The committed harness lives in a separate local worktree. It checks raw OCR identities, review persistence, exported verse, paired columns, and false column proposals on single-column quotations. The quotation continuation must retain an F2-backed blockquote proposal.
+The real-data proof selects nine pages across Poems, European Statistics and Century magazine. Keep every selected page in the report, including partial and exhausted alignments. The harness on this repository's master is `scripts/real_pgdp_review_proof.py`, committed in `adb148d`. It checks raw OCR identities, review persistence, exported verse, paired columns, and false column proposals on single-column quotations. The quotation continuation must retain an F2-backed blockquote proposal. The command below is the 2026-11-08 invocation. The worktree `.worktrees/p3-f2-proof` is gone, so that command cannot be rerun as written.
 
 Run the harness against the installed build, keeping its prepared output under the same books root used by the server:
 

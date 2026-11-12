@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-15
-Last verified: 2026-11-07
+Last verified: 2026-11-12
 Kind: process
 Level: I1
 ---
@@ -14,7 +14,7 @@ Level: I1
 - **Kind:** process
 - **Status:** active
 - **Level:** I1
-- **Last verified:** 2026-11-07
+- **Last verified:** 2026-11-12
 - **Read when:** filing a bug / defect / investigation report, or looking up an
   open issue's status, evidence, or resolution.
 - **Search terms:** issues folder, bug report, defect report, issue template,
@@ -22,18 +22,16 @@ Level: I1
 
 ## Remaining work
 
-- The predictor cache is still an unguarded check-then-set. [Concurrent OCR jobs can each build a duplicate DocTR predictor](2026-08-08-predictor-cache-not-thread-safe.md)
-- The CUDA probe still lets memory-query failures escape and marks queried CUDA devices available regardless of free memory. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
-- Weekly dep-refresh auto-land is still open. Commit `7ff9c7d` removed the GitHub workflows. Branch protection on master is off. Thirteen `dep-refresh/*` branches remain on origin. Closing the issue needs an owner decision. [Weekly dep-refresh cannot auto-land in this repo](2026-08-08-dep-refresh-cannot-auto-land.md)
+- The predictor cache on master is still an unguarded check-then-set. An unmerged fix is `04fa5db` on `worktree-fix-predictor-cache-gpu-probe`. [Concurrent OCR jobs can each build a duplicate DocTR predictor](2026-08-08-predictor-cache-not-thread-safe.md)
+- The CUDA probe on master still lets memory-query failures escape and can mark queried CUDA devices available regardless of free memory. Unmerged commits `9594e32` and `e879976` await review. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+- Weekly dep-refresh auto-land is still open. A 2026-11-07 GitHub check found master unprotected, thirteen `dep-refresh/*` branches, and nine open PRs. Do not recreate the deleted workflows. [Weekly dep-refresh cannot auto-land in this repo](2026-08-08-dep-refresh-cannot-auto-land.md)
 - Book-contracts extraction still needs evidence for data rescue, digest compatibility of stored artifacts, and repository retirement. The package move and checked consumer repoints exist. [Extract Book Contracts and Retire the pd- Repos](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md)
-- The suite work order still needs proof of production proposal wiring, accepted corpus quality, and a usable model and checkpoint. Region review, geometry detectors, and layout training interfaces now exist. [Suite status and where to spend agent time](../plans/2026-09-12-suite-status-and-agent-allocation.md)
 
-These items were checked against repository source and focused sibling evidence
-on 2026-11-07. The linked plans record the scope and outcomes still unverified.
+The three issue reports were checked against repository source on 2026-11-07.
+The extraction item is the only unfinished plan. Other suite work is the
+[roadmap](../context/intent-map.md).
 
 The same list is in [current state](../context/current-state.md).
-
-Draft plan: [F2 and Gutenberg layout regions](../plans/2026-11-07-f2-and-gutenberg-layout-regions.md).
 
 ## Shipped behavior
 
@@ -41,6 +39,7 @@ Draft plan: [F2 and Gutenberg layout regions](../plans/2026-11-07-f2-and-gutenbe
 - [Page lifecycle and storage](../architecture/page-lifecycle-and-storage.md)
 - [Shared suite services](../architecture/suite-services.md)
 - [Shared paths and DocTR export manifests](../architecture/shared-paths-and-export-manifest.md)
+- [Layout review](../architecture/layout-review.md)
 
 ## Purpose
 

@@ -36,6 +36,11 @@ work is proving the historical data rescue and repository retirement, then
 reconciling the unchecked steps with evidence. Do not restart extraction
 from the September checklist or treat its publication blocker as current.
 
+Shipped layout review is in [layout review](../architecture/layout-review.md).
+The suite roadmap is the [intent map](../context/intent-map.md). This plan
+stays open for Task 2 only: data rescue, digest compatibility, and `pd-`
+repository retirement.
+
 Checked the sibling source trees under `/mnt/work/projects/pdomain/`:
 
 - `pdomain-book-contracts` at `37fa7ec` has the geometry, text, typography,
