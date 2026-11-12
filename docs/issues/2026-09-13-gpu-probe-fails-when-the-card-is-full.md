@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-09-13
-Last verified: 2026-11-10
+Last verified: 2026-11-12
 Kind: issue
 ---
 
@@ -13,7 +13,7 @@ Kind: issue
 - **Kind:** issue
 - **Status:** active
 - **Owner:** CT
-- **Last verified:** 2026-11-10
+- **Last verified:** 2026-11-12
 - **Resolution:** Open. The probe fix is committed; acceptance criterion 4 is unverified.
 - **Severity:** High. Mounted local device routes return a 500 when the CUDA probe raises during memory queries.
 - **Read when:** a test fails with a CUDA out-of-memory error, the device route returns 500, or you are deciding what can be verified without a free GPU.
@@ -21,11 +21,9 @@ Kind: issue
 
 ## Summary
 
-`_probe_cuda` in `pdomain_ops/gpu/device_probe.py` catches only `ImportError`. Every CUDA call below that guard is unprotected. When the card has no free memory, creating the CUDA context raises `torch.AcceleratorError` and the exception escapes the probe, the `/api/suite/device` route, and any caller asking what hardware is present.
+As reported, `_probe_cuda` caught only `ImportError`. A CUDA memory query on a full card raised, and that exception escaped the device route. The same function set `available=True` for every device it queried.
 
-Asking which devices exist should never fail because one of them is busy. The probe should report the device as unavailable and say why.
-
-There is a second, smaller problem in the same function. It sets `available=True` for every device it finds, without consulting the free memory it just measured. A card with no free memory is reported as available.
+Commit `9594e32` is on master. A failed query, or 0 MiB free, is now unavailable. Fix status below records that code. This issue stays open until the three `pdomain-ocr-simple-gui` tests pass on a full GPU.
 
 ## Fix status — 2026-11-10
 
