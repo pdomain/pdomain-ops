@@ -601,7 +601,7 @@ entry distinguishes current repository evidence from historical claims.
 - Old path: `docs/plans/2026-11-07-f2-and-gutenberg-layout-regions.md`
 - Outcome: implemented
 - Superseded by: [layout review](../architecture/layout-review.md)
-- Removal commit: (fill after commit)
+- Removal commit: `1ffce80`
 - Rationale kept: Contracts `v0.2.1` (`94e4eef`) published the text hints. The 92-test proof, eight Chromium checks, consumer gates, and remote master commits are in the architecture doc. Partial corpus quality and model training were never this plan's claim.
 - Remaining work: accepted corpus quality and a usable checkpoint, in the [roadmap](intent-map.md)
 
@@ -610,7 +610,7 @@ entry distinguishes current repository evidence from historical claims.
 - Old path: `docs/plans/2026-11-08-p3-f2-review-api.md`
 - Outcome: implemented
 - Superseded by: [layout review](../architecture/layout-review.md)
-- Removal commit: (fill after commit)
+- Removal commit: `1ffce80`
 - Rationale kept: The nine-page proof ran 152 public operations and preserved 1,530 OCR words. Contracts `v0.3.0` is commit `1bd8261`. The 2026-11-08 "not merged" line was true that day. On 2026-11-12 the proof commits were on sibling masters. Per-page alignment states stay in the architecture doc.
 - Remaining work: ambiguous, changed, and exhausted pages, in the [roadmap](intent-map.md)
 
@@ -619,7 +619,7 @@ entry distinguishes current repository evidence from historical claims.
 - Old path: `docs/plans/2026-11-08-source-tabs-and-page-refresh.md`
 - Outcome: implemented
 - Superseded by: [layout review](../architecture/layout-review.md)
-- Removal commit: (fill after commit)
+- Removal commit: `1ffce80`
 - Rationale kept: Six tabs, generation reset, and the nine-page source preview measurements are in the architecture doc. Labeler commit `a96cff907` is on master. Wheel `0.6.1.dev14+ga96cff907` was the installed proof build.
 - Remaining work: unresolved formatting on the pages listed in the architecture doc
 
@@ -628,6 +628,6 @@ entry distinguishes current repository evidence from historical claims.
 - Old path: `docs/plans/2026-09-12-suite-status-and-agent-allocation.md`
 - Outcome: superseded
 - Superseded by: [intent map](intent-map.md) and [layout review](../architecture/layout-review.md)
-- Removal commit: (fill after commit)
+- Removal commit: `1ffce80`
 - Rationale kept: The September survey's release blockers were already stale on 2026-11-07. Book-tools `v0.30.1`, training `v0.3.0`, and pgdp-measure `v0.1.0` had local tags. Region review client code and geometry proposal code existed. The three-week agent split was execution scaffolding and was not copied. The unsettled items that remain are production proposal wiring, accepted corpus quality, a usable model, the synthesizer dataset contract, and where layout training runs.
 - Remaining work: those items, in the [roadmap](intent-map.md)
