@@ -22,12 +22,11 @@ Level: I1
 
 ## Remaining work
 
-- The predictor cache on master is still an unguarded check-then-set. An unmerged fix is `04fa5db` on `worktree-fix-predictor-cache-gpu-probe`. [Concurrent OCR jobs can each build a duplicate DocTR predictor](2026-08-08-predictor-cache-not-thread-safe.md)
-- The CUDA probe on master still lets memory-query failures escape and can mark queried CUDA devices available regardless of free memory. Unmerged commits `9594e32` and `e879976` await review. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+- The CUDA probe reports a failed memory query, or 0 MiB free, as unavailable. The hardware scan runs once per listing. Full-GPU acceptance tests are unrun. [The device probe raises instead of reporting when the GPU is full](2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
 - Weekly dep-refresh auto-land is still open. A 2026-11-07 GitHub check found master unprotected, thirteen `dep-refresh/*` branches, and nine open PRs. Do not recreate the deleted workflows. [Weekly dep-refresh cannot auto-land in this repo](2026-08-08-dep-refresh-cannot-auto-land.md)
 - Book-contracts extraction still needs evidence for data rescue, digest compatibility of stored artifacts, and repository retirement. The package move and checked consumer repoints exist. [Extract Book Contracts and Retire the pd- Repos](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md)
 
-The three issue reports were checked against repository source on 2026-11-07.
+The open issue reports were checked against repository source on 2026-11-07. The predictor-cache report was retired when `04fa5db` landed.
 The extraction item is the only unfinished plan. Other suite work is the
 [roadmap](../context/intent-map.md).
 

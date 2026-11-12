@@ -25,7 +25,7 @@ Use this flow when a person or LLM needs to prepare selected corpus pages and re
 
 ## Preconditions
 
-Contracts `v0.3.0` (`1bd8261`) contains the matching APIs. Labeler and source-data masters require `pdomain-book-contracts>=0.3.0`. The commands below still name the 2026-11-08 proof environment. Receipts that were under `/tmp/pdomain-p3-f2-20261108` are archived at `/mnt/work/projects/pdomain/.artifacts/tmp-archive-20261110/pdomain-p3-f2-20261108/`.
+Contracts `v0.3.0` (`1bd8261`) contains the matching APIs. Labeler and source-data masters require `pdomain-book-contracts>=0.3.0`. The 2026-11-08 installed environment predates that release and has contracts `0.2.2.dev1+g1bd8261b5`. The commands below still name that proof environment. Receipts that were under `/tmp/pdomain-p3-f2-20261108` are archived at `/mnt/work/projects/pdomain/.artifacts/tmp-archive-20261110/pdomain-p3-f2-20261108/`.
 
 The labeler needs Tesseract with `eng`, a configured corpus root, a Python interpreter that can run the source-data JSON CLI, and a writable books folder outside the corpus. Prepared books must be written under the labeler's configured books folder. Loading a book from another folder returns `project_outside_source_root`.
 
@@ -38,7 +38,7 @@ BASE_URL=http://127.0.0.1:8795
 "$CONTROL" --base-url "$BASE_URL" state
 ```
 
-Check `/tmp/pdomain-p3-f2-20261108/labeler-artifact-ready.json` for the current installed version, server mode and readiness. An `api_only` server supports automation but does not serve the browser UI. Do not treat a restart marker as a live server.
+`/mnt/work/projects/pdomain/.artifacts/tmp-archive-20261110/pdomain-p3-f2-20261108/labeler-artifact-ready.json` records this build's version, server mode, and readiness as of 2026-11-08. Use `state` to check the server that is running now. An `api_only` server supports automation but does not serve the browser UI. Do not treat a restart marker as a live server.
 
 To start a separate normal-mode server from that installed build, choose an unused port and keep its files outside the corpus. This example uses port 8794 and the bundled frontend.
 

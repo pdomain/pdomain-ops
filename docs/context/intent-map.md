@@ -30,8 +30,7 @@ Checked on 2026-11-12 from this repository's docs and from sibling `master` comm
 
 ## Build next in this repository
 
-- **Review the unmerged predictor-cache fix.** On master, concurrent OCR jobs can each build a duplicate DocTR predictor. Branch `worktree-fix-predictor-cache-gpu-probe` has a fix in `04fa5db` that is not on master. [Issue](../issues/2026-08-08-predictor-cache-not-thread-safe.md).
-- **Review the unmerged GPU-probe fix, then finish acceptance.** On master, a failed memory query still escapes. A queried CUDA device can be marked available regardless of free memory. The same branch reports a failed query or 0 MiB free as unavailable in `9594e32`. `fix-gpu-probe-single-scan` (`e879976`) stops a repeated hardware scan. Neither commit is on master. The issue stays open until three `pdomain-ocr-simple-gui` tests pass on a full GPU. Those tests were not run. Whether a card with some free memory, but not much, counts as unavailable is still an owner question. [Issue](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md).
+- **Finish GPU-probe acceptance.** A failed CUDA memory query, or a device with 0 MiB free, is reported unavailable (`9594e32`). The hardware scan runs once per device listing (`851d1dc`, checked by `e879976`). The issue stays open until three `pdomain-ocr-simple-gui` tests pass on a full GPU. Those tests were not run. Whether a card with some free memory, but not much, counts as unavailable is still an owner question. [Issue](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md).
 - **Decide whether to close dep-refresh.** Commit `7ff9c7d` on 2026-09-13 deleted the GitHub workflows. A 2026-11-07 GitHub API check found master unprotected and thirteen `dep-refresh/*` branches. It also found nine open PRs (85 through 93). It found `delete_branch_on_merge=false`. Do not recreate the deleted workflows. The owner chooses close-as-abandoned or a new design. [Issue](../issues/2026-08-08-dep-refresh-cannot-auto-land.md).
 - **Keep the PGDP proof harness with the labeler control client.** The harness is `scripts/real_pgdp_review_proof.py`. It is maintenance of the [layout review](../architecture/layout-review.md) path, not a new product.
 
@@ -77,6 +76,7 @@ The [lint-deviation catalog](../process/lint-deviations.md) stays a maintenance 
 
 ## Completed
 
+- **One DocTR predictor per cache key.** `get_or_build_predictor` builds each key once under a lock, and the batch build waits off the event loop. A failed build is not cached. Evidence: `04fa5db` and `tests/gpu/test_predictor_cache_concurrency.py`. Those tests use a stand-in builder on CPU. Behavior is in [batched OCR dispatch](../architecture/batched-ocr-dispatch.md).
 - **Layout review, F2 and Gutenberg, source tabs, and the nine-page API proof.** Behavior and measurements are in [layout review](../architecture/layout-review.md). The 2026-11-08 writeups said the newest line was local-only. On 2026-11-12 those commits were on sibling masters. Contracts `v0.3.0` is the alignment commit `1bd8261`. Partial pages remain.
 - **Clear the basedpyright strict backlog.** All 33 baseline diagnostics are fixed. The baseline file is deleted. Evidence: commit `f09d2b7`. Owner: CT.
 - **Remove `desktop._noop_app`.** The dead ASGI placeholder is gone. Evidence: commit `d73c331`. Owner: CT.

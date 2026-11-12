@@ -8,7 +8,7 @@ Kind: context
 
 # Current state
 
-The predictor cache, the CUDA probe, and weekly dep-refresh auto-land are still open in this repository.
+CUDA probe acceptance and weekly dep-refresh auto-land are still open in this repository.
 
 Book-contracts extraction still needs evidence.
 
@@ -26,8 +26,7 @@ Accepted production-corpus quality and a usable layout model are still open.
 
 These reports are still open in this repository.
 
-- The predictor cache on master is still an unguarded check-then-set. An unmerged fix is `04fa5db` on `worktree-fix-predictor-cache-gpu-probe`. [Concurrent OCR jobs can each build a duplicate DocTR predictor](../issues/2026-08-08-predictor-cache-not-thread-safe.md)
-- The CUDA probe on master still lets memory-query failures escape. It can mark queried CUDA devices available regardless of free memory. Unmerged commits `9594e32` and `e879976` await review. Full-GPU acceptance tests are unrun. [The device probe raises instead of reporting when the GPU is full](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+- The CUDA probe reports a failed memory query, or 0 MiB free, as unavailable (`9594e32`). The hardware scan runs once per listing (`851d1dc`, checked by `e879976`). Full-GPU acceptance tests are unrun. [The device probe raises instead of reporting when the GPU is full](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
 - Weekly dep-refresh auto-land is still open. A 2026-11-07 GitHub check found master unprotected and thirteen `dep-refresh/*` branches. It also found nine open PRs. Do not recreate the deleted workflows. Closing or replacing the issue needs an owner decision. [Weekly dep-refresh cannot auto-land in this repo](../issues/2026-08-08-dep-refresh-cannot-auto-land.md)
 
 Book-contracts extraction still needs evidence for data rescue, digest compatibility of stored artifacts, and repository retirement.
@@ -61,6 +60,6 @@ On 2026-11-12 the layout-review commits cited in that architecture doc were ance
 
 Labeler and source-data require `pdomain-book-contracts>=0.3.0`.
 
-Training still requires `>=0.2.1`.
+Training still requires `>=0.2.1`. This repository still requires `pdomain-book-contracts>=0.2.0`.
 
 Governed reports under [the issue index](../issues/README.md) are the work tracker. GitHub Issues is not.

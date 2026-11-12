@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-09-13
-Last verified: 2026-11-07
+Last verified: 2026-11-10
 Kind: issue
 ---
 
@@ -13,7 +13,8 @@ Kind: issue
 - **Kind:** issue
 - **Status:** active
 - **Owner:** CT
-- **Last verified:** 2026-11-07
+- **Last verified:** 2026-11-10
+- **Resolution:** Open. The probe fix is committed; acceptance criterion 4 is unverified.
 - **Severity:** High. Mounted local device routes return a 500 when the CUDA probe raises during memory queries.
 - **Read when:** a test fails with a CUDA out-of-memory error, the device route returns 500, or you are deciding what can be verified without a free GPU.
 - **Search terms:** CUDA out of memory, AcceleratorError, device probe, mem_get_info, suite device route, GPU saturated, vram_free_mb.
@@ -25,6 +26,32 @@ Kind: issue
 Asking which devices exist should never fail because one of them is busy. The probe should report the device as unavailable and say why.
 
 There is a second, smaller problem in the same function. It sets `available=True` for every device it finds, without consulting the free memory it just measured. A card with no free memory is reported as available.
+
+## Fix status — 2026-11-10
+
+The probe no longer raises when a CUDA memory query fails. Commit `9594e32`
+made these changes:
+
+- A device whose memory query raises is listed with `available=False` and the
+  first line of the error as `reason`.
+- A device with 0 MiB free is listed with `available=False` and the reason
+  `No free GPU memory.`
+- A failing `torch.cuda.is_available` or `device_count` call logs a warning and
+  lists no CUDA devices.
+- If the device name query also fails and the hardware scan finds as many cards
+  as CUDA, the label comes from the scan, so `list_devices` does not list the
+  card twice. Otherwise the label is `CUDA device N`.
+- The hardware scan runs at most once per `list_devices` call, however many
+  cards fail both queries. Before this, each such card ran its own scan of
+  `nvidia-smi`, `/proc` and `lspci`, and `list_devices` ran one more.
+
+Criteria 1 to 3 are met. `tests/gpu/test_device_probe.py` simulates each failure
+with a fake `torch` module, so no card was used. Criterion 4 is not verified: the
+three `pdomain-ocr-simple-gui` tests were not run, because they live in another
+repository, need this fix in the `pdomain-ops` version that repository installs,
+and need a saturated GPU. This issue stays open until they pass.
+
+The sections below describe the code before this fix.
 
 ## Verification — 2026-11-07
 
@@ -89,11 +116,9 @@ None. The fix is contained in one function, and `DeviceInfoEntry` already carrie
 
 ## Next steps
 
-1. Widen the guard in `_probe_cuda` to cover the whole loop body, not just the import.
-2. Decide the threshold below which a device is reported unavailable rather than merely low. Zero free memory is clearly unavailable; the rest is a judgment the batch-size code may already imply.
-3. Add the simulated-failure test.
-4. Re-run the three `pdomain-ocr-simple-gui` tests to confirm.
+1. Once `pdomain-ocr-simple-gui` installs a `pdomain-ops` version with this fix, re-run its three tests on a saturated GPU.
+2. Optional: decide whether a card with little free memory should also be reported unavailable. The fix applies only the case this report calls clear, 0 MiB free. The batch-size code sets no minimum: `pick_doctr_batch_sizes` still uses a detection batch of 1 when free memory is below one page's estimate.
 
 ## Resolution
 
-Open.
+Open. The fix is in commit `9594e32`. Criterion 4 remains. See Fix status.

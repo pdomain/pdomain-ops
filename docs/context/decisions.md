@@ -631,3 +631,12 @@ entry distinguishes current repository evidence from historical claims.
 - Removal commit: `1ffce80`
 - Rationale kept: The September survey's release blockers were already stale on 2026-11-07. Book-tools `v0.30.1`, training `v0.3.0`, and pgdp-measure `v0.1.0` had local tags. Region review client code and geometry proposal code existed. The three-week agent split was execution scaffolding and was not copied. The unsettled items that remain are production proposal wiring, accepted corpus quality, a usable model, the synthesizer dataset contract, and where layout training runs.
 - Remaining work: those items, in the [roadmap](intent-map.md)
+
+### 2026-11-12 Retired: Concurrent OCR jobs can each build a duplicate DocTR predictor
+
+- Old path: `docs/issues/2026-08-08-predictor-cache-not-thread-safe.md`
+- Outcome: implemented
+- Superseded by: [Batched OCR dispatch](../architecture/batched-ocr-dispatch.md)
+- Removal commit: `728e5f2`
+- Rationale kept: The defect was a non-atomic read, build, and write. One module lock covers the build and not the OCR run. The issue recorded duplicate build time and higher peak memory, not wrong OCR text. No real CUDA race was reproduced. The tests use a stand-in builder on CPU.
+- Remaining work: none

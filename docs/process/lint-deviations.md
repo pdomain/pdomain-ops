@@ -52,12 +52,6 @@ environment, so `reportMissingImports` does not fire and the strict
   and `legacy` device returns. Both values pass `_VALID_DEVICES` checks before
   return, but basedpyright does not preserve the literal narrowing.
 
-### Shared cache
-
-- `pdomain_ops/gpu/local_stage.py` suppresses `reportPrivateUsage` on its import
-  of `_predictor_cache` from `pdomain_ops/gpu/default_stages.py`. The cache is a
-  deliberate GPU-package-internal share between the local and default stages.
-
 The `get_finetuned_torch_doctr_predictor` imports in `default_stages.py` and
 `local_stage.py` no longer suppress `reportUnknownVariableType`.
 

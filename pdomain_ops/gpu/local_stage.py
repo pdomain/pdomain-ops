@@ -132,9 +132,7 @@ class LocalStageDispatcher:
         backoff can rebuild a predictor at reduced batch sizes and store it
         back under its own cache key.
         """
-        from pdomain_ops.gpu.default_stages import (
-            _predictor_cache,  # pyright: ignore[reportPrivateUsage]  # deliberate gpu-package-internal shared cache
-        )
+        from pdomain_ops.gpu.default_stages import get_or_build_predictor
         from pdomain_ops.gpu.doctr_batch import run_doctr_batch
 
         device = (
@@ -160,23 +158,23 @@ class LocalStageDispatcher:
 
             det_path, reco_path = resolve_ocr_models()
             cache_key = (str(det_path), str(reco_path), d_bs, r_bs)
-            predictor = _predictor_cache.get(cache_key)
-            if predictor is None:
-                predictor = get_finetuned_torch_doctr_predictor(
+            return get_or_build_predictor(
+                cache_key,
+                lambda: get_finetuned_torch_doctr_predictor(
                     str(det_path),
                     str(reco_path),
                     det_bs=d_bs,
                     reco_bs=r_bs,
-                )
-                _predictor_cache[cache_key] = predictor
-            return predictor
+                ),
+            )
 
-        predictor = _get_or_build_predictor(det_bs, reco_bs)
+        loop = asyncio.get_event_loop()
+        # Off the event loop: this can wait on another thread's predictor build.
+        predictor = await loop.run_in_executor(None, _get_or_build_predictor, det_bs, reco_bs)
 
         def build_smaller(d_bs: int, r_bs: int) -> Any:
             return _get_or_build_predictor(d_bs, r_bs)
 
-        loop = asyncio.get_event_loop()
         # The worker returns book-tools Page objects; serialize to dicts here
         # at the dispatcher's transport boundary (a remote backend would
         # serialize identically before sending results over the wire).
