@@ -91,10 +91,10 @@ This is the honest list of work that needs a free GPU, so it is not mistaken for
 
 **Blocked by intent, and unaffected by this bug.** These need real GPU capacity rather than a working probe:
 
-- `make test-slow` in `pdomain-book-tools`, which downloads models and runs them.
-- `make test-integration` and `make test-layout-integration` in `pdomain-ocr-cli`, which run real layout detection.
-- `make integration` in `pdomain-ocr-labeler-spa`, a real DocTR pipeline of roughly ten minutes.
-- `make e2e-real-ocr` in `pdomain-ocr-simple-gui`.
+- `just test-slow` in `pdomain-book-tools`, which downloads models and runs them.
+- `just test-integration` and `just test-layout-integration` in `pdomain-ocr-cli`, which run real layout detection.
+- `just integration` in `pdomain-ocr-labeler-spa`, a real DocTR pipeline of roughly ten minutes.
+- `just e2e-real-ocr` in `pdomain-ocr-simple-gui`.
 - Any DocTR training or evaluation run in `pdomain-ocr-training`.
 
 **Not blocked, despite involving GPU code.** The `tests/gpu/` tree in this repository guards on availability and runs without a card, as does everything in `pdomain-book-tools` covered by `GPU_TESTING.md`. The 2026-09-13 investigation reported ordinary `make ci` passing in the repositories it checked, except for the three tests named above. That suite-wide result was not rerun on 2026-11-07.

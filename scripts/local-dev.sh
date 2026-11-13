@@ -31,7 +31,7 @@ MARKER="$PROJECT_VENV/.pdomain-local-mode"
 say() { echo "[local-dev] $*"; }
 
 # Pre-flight: siblings must exist
-make -C "$REPO_ROOT" local-setup
+just --working-directory "$REPO_ROOT" --justfile "$REPO_ROOT/justfile" local-setup
 
 # Python: install editable (run from canonical repo root so project .venv is discovered).
 for s in "${PY_SIBLINGS[@]}"; do
@@ -44,4 +44,4 @@ mkdir -p "$(dirname "$MARKER")"
 touch "$MARKER"
 say "✓ marker written: $MARKER"
 
-say "✓ local-dev mode active. Run 'make local-check' to verify."
+say "✓ local-dev mode active. Run 'just local-check' to verify."

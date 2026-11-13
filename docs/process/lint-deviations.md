@@ -213,7 +213,7 @@ failures as `ImportError`.
 
 ### Automated type checking covers the shipped package
 
-The `Makefile` `typecheck` target and the local basedpyright pre-commit hook in
+The `justfile` `typecheck` recipe and the local basedpyright pre-commit hook in
 `.pre-commit-config.yaml` both run
 `uv run basedpyright pdomain_ops --level error`. They gate only the shipped
 package, not `tests/` or `scripts/`.
@@ -224,8 +224,8 @@ strict-only inference rules to `none` (see "Strict mode on the package" above),
 so editor checking of test and script code matches the recommended-equivalent
 gate rather than full strict.
 
-The `Makefile` `pre-commit-check` target sets `SKIP=basedpyright` because
-`make ci` runs the dedicated `typecheck` target immediately afterward. This
+The `justfile` `pre-commit-check` recipe sets `SKIP=basedpyright` because
+`just ci` runs the dedicated `typecheck` recipe immediately afterward. This
 avoids running the same package check twice. Running `pre-commit-check` alone
 therefore does not run basedpyright.
 

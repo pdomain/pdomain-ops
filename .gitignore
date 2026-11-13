@@ -98,5 +98,5 @@ cython_debug/
 # CI output log when using AI=1 flag
 .ci-ai.log
 
-# Local-dev mode marker (written by `make local-dev`, cleared by `make local-dev` teardown)
+# Local-dev mode marker (written by `just local-dev`, cleared by `just local-dev` teardown)
 .venv/.pdomain-local-mode

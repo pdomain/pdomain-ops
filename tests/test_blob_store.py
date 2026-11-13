@@ -43,7 +43,7 @@ def test_prune_orphans_deletes_unreferenced(tmp_path: Path) -> None:
 
 def test_blobstore_satisfies_protocol(tmp_path: Path) -> None:
     # Structural conformance to the Plan-1 BlobStoreProtocol: this annotated
-    # assignment makes basedpyright fail `make typecheck` if BlobStore ever
+    # assignment makes basedpyright fail `just typecheck` if BlobStore ever
     # drifts from `read(self, hash: str) -> bytes`. Runtime asserts are secondary.
     store: BlobStoreProtocol = BlobStore(tmp_path)
     concrete = BlobStore(tmp_path)

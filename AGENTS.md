@@ -16,11 +16,11 @@ and schemas.emit. Imported by every `pdomain-*` SPA backend.
 
 | target | does |
 |---|---|
-| `make local-setup` | clone any missing sibling pdomain-* repos into the workspace |
-| `make local-dev` | switch to local-dev mode (editable `../pdomain-book-tools` + marker) |
-| `make local-check` | print local-dev mode + per-sibling resolution |
-| `make local-upgrade-deps` | upgrade deps then restore editable siblings (local-mode only) |
-| `make update-pdomain-deps` | bump pdomain-* sibling deps to registry latest; leaves diff for review |
+| `just local-setup` | clone any missing sibling pdomain-* repos into the workspace |
+| `just local-dev` | switch to local-dev mode (editable `../pdomain-book-tools` + marker) |
+| `just local-check` | print local-dev mode + per-sibling resolution |
+| `just local-upgrade-deps` | upgrade deps then restore editable siblings (local-mode only) |
+| `just update-pdomain-deps` | bump pdomain-* sibling deps to registry latest; leaves diff for review |
 
 ## docs/ folder
 
@@ -88,7 +88,7 @@ change any step below.
    worktree path + branch, use the `finishing-a-development-branch` skill to
    decide how to integrate.
 9. **TDD.** Write the failing test first where the plan calls for it.
-10. **Verify before committing.** Focused verification plus `make ci`.
+10. **Verify before committing.** Focused verification plus `just ci`.
 11. **Commit locally; do not push** without explicit say-so.
 
 <!-- workspace-process:end -->
@@ -96,7 +96,7 @@ change any step below.
 <!-- >>> repo-setup:repo-facts sha256:084e53f2a38bb4da1c0d67dfbf89d384e4f96076d18d2ed24eff3e4f01c14757 -->
 ## Repository facts
 
-This Python operations library provides shared suite plumbing, GPU dispatch, and schema emission for the `pdomain-*` suite. Package configuration is in `pyproject.toml`. Operational entry points include `Makefile` and the verified scripts in `scripts/`.
+This Python operations library provides shared suite plumbing, GPU dispatch, and schema emission for the `pdomain-*` suite. Package configuration is in `pyproject.toml`. Operational entry points include `justfile` and the verified scripts in `scripts/`.
 <!-- <<< repo-setup:repo-facts -->
 
 <!-- >>> repo-setup:commands-and-gates sha256:fac24f4b09f6337a8408ce0e5d61ef78bba25fe4f28d08d9bebfd141ec9b2afc -->
@@ -106,11 +106,11 @@ This Python operations library provides shared suite plumbing, GPU dispatch, and
 - `uv run ruff check .`
 - `uv run ruff format --check .`
 - `uv run basedpyright`
-- `make local-setup`
-- `make local-dev`
-- `make local-check`
-- `make local-upgrade-deps`
-- `make update-pdomain-deps`
+- `just local-setup`
+- `just local-dev`
+- `just local-check`
+- `just local-upgrade-deps`
+- `just update-pdomain-deps`
 - `scripts/ci-against-master.sh`
 - `scripts/do-release.sh`
 <!-- <<< repo-setup:commands-and-gates -->
