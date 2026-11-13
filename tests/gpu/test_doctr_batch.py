@@ -60,6 +60,12 @@ async def test_run_doctr_batch_returns_page_per_image(return_shape: str) -> None
 
     # Worker now returns Page objects; serialization is the dispatcher's job.
     assert result == [fake_page_a, fake_page_b]
+    if return_shape == "tuple":
+        assert fake_page_a.ocr_rotation_degrees == 90
+        assert fake_page_b.ocr_rotation_degrees == 0
+    else:
+        assert "ocr_rotation_degrees" not in fake_page_a.__dict__
+        assert "ocr_rotation_degrees" not in fake_page_b.__dict__
 
 
 @pytest.mark.asyncio
@@ -283,6 +289,10 @@ async def test_oom_at_floor_falls_back_to_cpu(
 
     assert result == [fake_page]
     assert any("OOM" in r.message or "fallback" in r.message.lower() for r in caplog.records)
+    if return_shape == "tuple":
+        assert fake_page.ocr_rotation_degrees == 180
+    else:
+        assert "ocr_rotation_degrees" not in fake_page.__dict__
 
 
 @pytest.mark.asyncio

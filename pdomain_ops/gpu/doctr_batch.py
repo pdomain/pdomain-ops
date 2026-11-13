@@ -77,18 +77,28 @@ def _decode_image(img: np.ndarray | bytes) -> np.ndarray:
     return decoded
 
 
-def _document_from_ocr_result(result: Any) -> Any:
-    """Return the Document from either book-tools batch-OCR shape.
+def _pages_from_ocr_result(result: Any) -> list[Any]:
+    """Return one page per image from either book-tools batch-OCR shape.
 
-    Published pdomain-book-tools 0.30.1 returns a Document. Unpublished
-    commit c34981b returns ``(Document, clockwise_degrees)``. The degree
-    list is unused.
+    Published pdomain-book-tools 0.30.1 returns a Document and this path
+    does not set ``ocr_rotation_degrees``. pdomain-book-tools 0.31.0
+    returns ``(Document, clockwise_degrees)``. Each page then gets
+    ``ocr_rotation_degrees`` set to the degree at the same index.
     """
     if isinstance(result, tuple):
-        # 0.30.1 returns a Document. c34981b returns (Document, degrees), which
-        # the installed stub does not describe, so the first item is taken as Any.
-        return cast("Any", result[0])
-    return result
+        # The installed 0.30.1 stub still says this method returns a Document.
+        document, degrees = cast("tuple[Any, list[int]]", result)
+        pages = list(document.pages)
+        if len(degrees) != len(pages):
+            msg = (
+                "from_images_ocr_via_doctr returned "
+                f"{len(degrees)} rotation degrees for {len(pages)} pages"
+            )
+            raise RuntimeError(msg)
+        for page, degree in zip(pages, degrees, strict=True):
+            page.ocr_rotation_degrees = degree
+        return pages
+    return list(result.pages)
 
 
 def _cpu_fallback_single(image: np.ndarray, source_id: str) -> Any:
@@ -100,17 +110,17 @@ def _cpu_fallback_single(image: np.ndarray, source_id: str) -> Any:
     """
     from pdomain_book_tools.ocr.document import Document
 
-    doc = _document_from_ocr_result(
+    pages = _pages_from_ocr_result(
         Document.from_images_ocr_via_doctr(
             images=[image],
             source_identifiers=[source_id],
             # No predictor -- stock CPU weights, no VRAM pressure.
         )
     )
-    if not doc.pages:
+    if not pages:
         msg = f"CPU OCR fallback produced no page for source {source_id!r}"
         raise RuntimeError(msg)
-    return doc.pages[0]
+    return pages[0]
 
 
 def run_doctr_batch(
@@ -149,7 +159,9 @@ def run_doctr_batch(
     -------
     list[Page]:
         One book-tools ``Page`` per input image, in the same order as
-        *images*. Serialization to dicts is the *dispatcher's* job at its
+        *images*. A ``(Document, clockwise_degrees)`` return sets
+        ``ocr_rotation_degrees`` on each page. A ``Document`` return
+        leaves that attribute unset. Serialization to dicts is the *dispatcher's* job at its
         transport boundary (e.g. ``LocalStageDispatcher.run_ocr_batch`` does
         ``[p.to_dict() for p in ...]``); in-process consumers like
         pdomain-ocr-cli use the ``Page`` objects directly.
@@ -175,14 +187,13 @@ def run_doctr_batch(
 
     while True:
         try:
-            doc = _document_from_ocr_result(
+            return _pages_from_ocr_result(
                 Document.from_images_ocr_via_doctr(
                     images=decoded,
                     source_identifiers=list(source_identifiers),
                     predictor=current_predictor,
                 )
             )
-            return list(doc.pages)
 
         except Exception as exc:
             if not _is_oom(exc):
