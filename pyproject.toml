@@ -20,8 +20,8 @@ dependencies = [
     "httpx2>=2.12",
     "starlette>=1.6.0",
     "packaging>=26",
-    "pdomain-book-tools>=0.28.0",
-    "pdomain-book-contracts>=0.2.0",
+    "pdomain-book-tools>=0.31.0",
+    "pdomain-book-contracts>=0.3.1",
     "platformdirs>=4.11",
     "pydantic>=2.13",
     "tomli>=2.4",
@@ -300,6 +300,9 @@ addopts = [
 ]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# pytest-asyncio 1.5 warns, and then errors under filterwarnings, when this
+# is unset. fixture-scope is the 1.4 default: the loop follows the fixture.
+asyncio_default_fixture_loop_scope = "fixture-scope"
 markers = [
     # GPU tests are serialised onto one xdist worker via tests/gpu/conftest.py.
     # The marker itself is added automatically by the conftest hook; individual
