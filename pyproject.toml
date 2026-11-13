@@ -53,7 +53,22 @@ source = "vcs"
 packages = ["pdomain_ops"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["**/.venv", "**/.venv-container"]
+exclude = [
+    "**/.venv",
+    "**/.venv-container",
+    "/.docgraph/**",
+    "/.worktrees/**",
+    "**/node_modules/**",
+    "**/.ci-ai.log",
+    "**/.coverage",
+    "**/.coverage.*",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/.ruff_cache/**",
+    "**/.mypy_cache/**",
+    "**/.pyright/**",
+    "**/htmlcov/**",
+]
 
 [[tool.uv.index]]
 name = "pdomain-index-pip"
