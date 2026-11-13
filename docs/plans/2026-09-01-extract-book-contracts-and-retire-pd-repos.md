@@ -1,5 +1,5 @@
 ---
-Status: draft
+Status: partial
 Owner: CT
 Created: 2026-09-01
 Last verified: 2026-11-07
@@ -23,13 +23,18 @@ This plan does not authorize implementation. Begin each task only after explicit
 ## Agent Index
 
 - **Kind:** plan
-- **Status:** draft
+- **Status:** partial
 - **Owner:** CT
 - **Last verified:** 2026-11-07
 - **Read when:** extracting shared contracts, retiring the pd- repositories, or changing what depends on `pdomain-book-tools`.
 - **Search terms:** book contracts, package extraction, pd-ocr-labeler retirement, import weight, canonical json bytes.
 
 ## Verification — 2026-11-07
+
+The lifecycle was classified as partial on 2026-11-13 from the shipped module
+layout and the unfinished Task 2 evidence requirements. The verification
+details below keep their original date. The shipped package boundary now lives
+in [Book contracts package boundary](../architecture/book-contracts-boundary.md).
 
 The package move and the checked consumer repoints exist. The remaining
 work is proving the historical data rescue and repository retirement, then
@@ -500,7 +505,7 @@ The excluded follow-up work has no acceptance criteria here, by design.
 - The package is named `pdomain-book-contracts`.
 
 The target module layout the reorganisation commits follow is specified in
-[the book contracts module layout](../specs/2026-09-02-book-contracts-module-layout.md).
+[the book contracts package boundary](../architecture/book-contracts-boundary.md).
 
 ## Human decisions this plan still needs
 

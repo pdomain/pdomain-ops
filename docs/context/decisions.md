@@ -640,3 +640,30 @@ entry distinguishes current repository evidence from historical claims.
 - Removal commit: `728e5f2`
 - Rationale kept: The defect was a non-atomic read, build, and write. One module lock covers the build and not the OCR run. The issue recorded duplicate build time and higher peak memory, not wrong OCR text. No real CUDA race was reproduced. The tests use a stand-in builder on CPU.
 - Remaining work: none
+
+### 2026-11-13 Retired: Book Contracts Module Layout
+
+- Old path: `docs/specs/2026-09-02-book-contracts-module-layout.md`
+- Outcome: implemented
+- Superseded by: [Book contracts package boundary](../architecture/book-contracts-boundary.md)
+- Removal commit: the commit introducing this tombstone; resolve with `git log --diff-filter=D -- docs/specs/2026-09-02-book-contracts-module-layout.md`.
+- Rationale kept: The replacement records module responsibilities, dependency direction, the typography normalization cycle, generic compatibility protocols and the image-provider registry. Fresh analyzers inspected contracts at `1b1605a` and book-tools at `50fcb0e`. The spec had metadata and a substantive 2026-11-07 review recording thirteen passing import/provider tests and their limits; no review was invented for retirement.
+- Remaining work: [The extraction plan](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md) stays partial. Data rescue, stored-digest compatibility and old-repository retirement still need evidence. Moving the maintained boundary description into the contracts repository remains that owner's work.
+
+### 2026-11-13 Retired: Superseded predictor and GPU-probe handoffs
+
+- Old paths: `docs/_archive/handoff/2026-11-11-032239-predictor-cache-and-gpu-probe-fixes-ready-for-review.md`, `docs/_archive/handoff/2026-11-11-043359-runbook-corrected-gpu-probe-acceptance-still-open.md`, and `docs/handoff/2026-11-11-084431-gpu-probe-hardware-scan-runs-once.md`.
+- Outcome: superseded
+- Superseded by: [Batched OCR dispatch](../architecture/batched-ocr-dispatch.md), [shared suite services](../architecture/suite-services.md), the [PGDP review runbook](../runbooks/pgdp-api-review.md), and the [open GPU issue](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md).
+- Removal commit: the commit introducing this tombstone; use `git log --diff-filter=D -- <old-path>` for each path.
+- Rationale kept: Merge `36874b1` brought the cache lock (`04fa5db`), unavailable-device reporting (`9594e32`), once-per-listing hardware scan (`851d1dc`), and its strengthened test (`e879976`) onto master. The handoffs recorded 499 passing tests and one skip on the earlier branch, then 502 passing tests and one skip after the scan fix. Those were CPU-double checks, not a real-GPU proof. The runbook's deleted-worktree invocation now uses the current checkout. Old extraction-plan path references remain historical execution history.
+- Remaining work: Three simple-GUI tests must still pass on a saturated GPU. Whether a positive but small free-memory value means unavailable remains an owner decision. Neither retirement nor mocked tests closes that issue. The [overnight index](../handoff/2026-11-11-125544-pdomain-overnight-branches-await-owner-review.md) stays for unresolved sibling branches and owner choices.
+
+### 2026-11-13 — Verify the architecture migration and retain open work
+
+- **Context:** Six fresh read-only analyzers returned 31 per-document evidence records before serial edits in an isolated worktree based on `810eeb7`.
+- **Decision:** Promote the implemented contracts boundary, correct CUDA-probe and batch-return descriptions, and replace the runbook's deleted-worktree command. Keep the extraction plan partial and both issue resolutions open. Open issues retain active lifecycle status under the issue-index contract; the GPU fix's partial acceptance is expressed in its fix status and acceptance criteria.
+- **Rationale:** Shipped source behavior belongs in architecture. CPU-double tests do not establish saturated-GPU acceptance, a usable trained model, stored-data rescue or old-repository retirement. The remaining [overnight handoff](../handoff/2026-11-11-125544-pdomain-overnight-branches-await-owner-review.md) still carries sibling branches and owner choices, so it stays.
+- **Evidence:** `pdomain_ops/gpu/device_probe.py`, `pdomain_ops/gpu/doctr_batch.py`, their focused tests, and the contracts/book-tools source revisions cited in [the package boundary](../architecture/book-contracts-boundary.md). The baseline `just ci` at `810eeb7` passed 504 tests and skipped one because Modal was absent; build and strict docgraph passed. The three local-only predecessors are `64f9bec` (dependency/lock refresh), `3dee638` (pilot for `just`), and `810eeb7` (shim removal).
+- **Tool limitation:** The optional `docgraph_doc_retirer_plan` failed with `path component is a symlink: CLAUDE.md`. The coordinator ruling identified the unrelated canonical compatibility link as the engine limitation. The doc-retirer skill's direct procedure was used instead: evidence, metadata and recorded spec review, link-impact checks, replacement architecture, tombstones, context curation, and strict checks. The symlink and tool safety rules were preserved; the planner did not succeed.
+- **Remaining work:** Full-GPU acceptance, dep-refresh disposition, extraction Task 2, and the roadmap's deferred bets remain open. Publication is staged separately; this migration does not tag, push, publish, restart services or upgrade dependencies.

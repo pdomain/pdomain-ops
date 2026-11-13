@@ -30,6 +30,12 @@ predictors by batch size and retries CUDA allocation failures with a smaller
 detection batch. The worker returns page objects. The dispatcher serializes
 results at its boundary.
 
+The worker accepts both older `Document` OCR returns and the
+`(Document, clockwise_degrees)` return used by book-tools 0.31.0. For the tuple
+form, each page receives the degree at its matching index in
+`ocr_rotation_degrees`; mismatched page and degree counts raise. The older
+form leaves that attribute unset. The same handling applies to CPU fallback.
+
 The worker accepts image bytes or arrays, not filesystem paths. This design
 keeps the dispatcher contract usable across local and remote transports. The
 caller owns predictor caching and supplies any smaller-predictor builder. The
@@ -86,3 +92,7 @@ transports are unbuilt. Their stubs must not be described as available backends.
 - **Verified:** 2026-11-10 by `tests/gpu/test_predictor_cache_concurrency.py`.
   Two threads racing on one cold key build one predictor at both call sites.
   The test uses a stand-in builder on CPU, not a real CUDA run.
+- **Return compatibility verified:** 2026-11-13 by source and test inspection
+  of `_pages_from_ocr_result` and `tests/gpu/test_doctr_batch.py`. Commits
+  `ac74d7d` and `a8f9ee5` normalize both return forms and preserve per-page
+  rotation. The cases use OCR doubles and do not measure real GPU capacity.

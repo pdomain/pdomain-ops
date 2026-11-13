@@ -210,13 +210,13 @@ jq . "$REVIEW_ROOT/data/doctr-export/$PROJECT_ID/all/regions/structure.json"
 
 ## Verification
 
-The real-data proof selects nine pages across Poems, European Statistics and Century magazine. Keep every selected page in the report, including partial and exhausted alignments. The harness on this repository's master is `scripts/real_pgdp_review_proof.py`, committed in `adb148d`. It checks raw OCR identities, review persistence, exported verse, paired columns, and false column proposals on single-column quotations. The quotation continuation must retain an F2-backed blockquote proposal. The command below is the 2026-11-08 invocation. The worktree `.worktrees/p3-f2-proof` is gone, so that command cannot be rerun as written.
+The real-data proof selects nine pages across Poems, European Statistics and Century magazine. Keep every selected page in the report, including partial and exhausted alignments. The harness on this repository's master is `scripts/real_pgdp_review_proof.py`, committed in `adb148d`. It checks raw OCR identities, review persistence, exported verse, paired columns, and false column proposals on single-column quotations. The quotation continuation must retain an F2-backed blockquote proposal. The historical 2026-11-08 invocation used `.worktrees/p3-f2-proof`, which no longer exists. The command below uses the current checkout and its locked environment. Its paths were inspected on 2026-11-13; the live proof was not rerun.
 
 Run the harness against the installed build, keeping its prepared output under the same books root used by the server:
 
 ```bash
-PROOF_TREE=/mnt/work/projects/pdomain/pdomain-ops/.worktrees/p3-f2-proof
-"$PROOF_TREE/.venv/bin/python" "$PROOF_TREE/scripts/real_pgdp_review_proof.py" \
+PROOF_TREE=/mnt/work/projects/pdomain/pdomain-ops
+uv run --project "$PROOF_TREE" python "$PROOF_TREE/scripts/real_pgdp_review_proof.py" \
   --mode proof --cases "$PROOF_TREE/scripts/fixtures/real-pgdp-review-cases.tsv" \
   --corpus-root /mnt/work/projects/pdomain-data/pgdp-corpus \
   --source-python /mnt/work/projects/pdomain/.artifacts/p3-f2-20261108/source-wheel-smoke-env/bin/python \

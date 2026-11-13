@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 Kind: context
 ---
 
@@ -18,7 +18,7 @@ Accepted production-corpus quality and a usable layout model are still open.
 
 - **Kind:** context
 - **Status:** active
-- **Last verified:** 2026-11-12
+- **Last verified:** 2026-11-13
 - **Read when:** starting work that depends on current repository documentation.
 - **Search terms:** current state, remaining work, open issues, layout review, roadmap.
 
@@ -39,9 +39,12 @@ The [roadmap](intent-map.md) names the repository for each remaining bet.
 
 Every proved page's composed alignment is still ambiguous, changed, or exhausted. [Layout review](../architecture/layout-review.md)
 
-The last recorded local `make ci` in this file is the 2026-11-07 run. That run passed 464 tests and skipped one because Modal is not installed.
+The historical 2026-11-07 `make ci` run passed 464 tests and skipped one because Modal was not installed.
 
-This documentation pass did not rerun that gate. It does not establish real GPU behavior or every consumer's gate.
+The current gate is `just ci`. The 2026-11-13 migration-worktree baseline at
+`810eeb7` passed 504 tests, skipped one because Modal is absent, built the
+package, and passed strict docgraph. It does not establish real GPU behavior
+or every consumer's gate.
 
 Deferred, blocked, and rejected bets stay in the [roadmap](intent-map.md).
 
@@ -54,12 +57,18 @@ Remote Modal and shared-container batch dispatch stay deferred there.
 - [Page lifecycle and storage](../architecture/page-lifecycle-and-storage.md)
 - [Shared suite services](../architecture/suite-services.md)
 - [Shared paths and DocTR export manifests](../architecture/shared-paths-and-export-manifest.md)
+- [Book contracts package boundary](../architecture/book-contracts-boundary.md), including dependency direction, structural protocols and the image-provider seam
 - Strict type checking with no baseline file: [lint deviations](../process/lint-deviations.md)
 
 On 2026-11-12 the layout-review commits cited in that architecture doc were ancestors of the sibling masters.
 
-Labeler and source-data require `pdomain-book-contracts>=0.3.0`.
+On 2026-11-13, the inspected labeler, source-data and training checkouts all
+declared `pdomain-book-contracts>=0.3.1`. This repository declares the same
+minimum and `pdomain-book-tools>=0.31.0` in `pyproject.toml` (`64f9bec`). These
+are source declarations, not verification of deployed consumer versions.
 
-Training still requires `>=0.2.1`. This repository still requires `pdomain-book-contracts>=0.2.0`.
+The module-layout spec and superseded predictor/GPU handoffs are retired in
+the [decision log](decisions.md). The extraction plan remains partial, and
+both open issues retain their acceptance or owner-decision requirements.
 
 Governed reports under [the issue index](../issues/README.md) are the work tracker. GitHub Issues is not.

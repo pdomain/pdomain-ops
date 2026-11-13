@@ -32,9 +32,16 @@ not prevent preference changes.
 
 Device discovery reports CPU, CUDA, and Apple MPS through shared models. It
 also reports detected NVIDIA hardware that PyTorch cannot use, with
-`available=False` and a reason. CUDA memory probing can still raise when the
-card is full. Local stage dispatch consumes the resolved target; the route
-does not run OCR itself.
+`available=False` and a reason. A CUDA memory-query `RuntimeError`, or a
+successful query reporting 0 MiB free, now produces an unavailable device
+instead of raising. A device listing shares one lazy hardware scan across
+fallback paths; known CUDA names need no fallback scan. Local stage dispatch
+consumes the resolved target; the route does not run OCR itself.
+
+This fix does not establish saturated-GPU acceptance in consuming applications.
+The [open GPU issue](../issues/2026-09-13-gpu-probe-fails-when-the-card-is-full.md)
+still requires three simple-GUI tests on a full GPU. Whether a positive but
+small amount of free memory should count as unavailable remains an owner question.
 
 ## Update boundary
 
@@ -97,3 +104,8 @@ also decide which shared paths they publish.
 - **Verified:** 2026-11-07 by reading the current code and focused tests above,
   plus `tests/gpu/test_device_probe.py`. The nonlocal `PUT` behavior follows
   from source inspection; the route tests cover nonlocal `GET` only.
+- **Device correction verified:** 2026-11-13 by source and test inspection of
+  `pdomain_ops/gpu/device_probe.py` and `tests/gpu/test_device_probe.py`, including
+  memory-query failures, zero free memory, and hardware-scan deduplication.
+  Commits `9594e32`, `851d1dc`, and `e879976` implement and test these paths.
+  The tests use stand-ins; this is not a real-GPU acceptance receipt.

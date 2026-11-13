@@ -2,7 +2,7 @@
 Status: active
 Owner: CT
 Created: 2026-07-13
-Last verified: 2026-11-12
+Last verified: 2026-11-13
 Kind: context
 ---
 
@@ -22,11 +22,15 @@ The September 2026 suite schedule is retired.
 
 - **Kind:** context
 - **Status:** active
-- **Last verified:** 2026-11-12
+- **Last verified:** 2026-11-13
 - **Read when:** choosing the next suite task, or deciding which repository should own it.
 - **Search terms:** roadmap, intent, separate repository, deferred work, owner decision.
 
 Checked on 2026-11-12 from this repository's docs and from sibling `master` commits. External infrastructure and historical cross-repository decisions keep their recorded evidence dates. This date does not revalidate them.
+
+The 2026-11-13 migration rechecked ops code, retirement candidates and sibling
+dependency declarations. It did not rerun external-state checks, saturated-GPU
+acceptance or the historical layout proof.
 
 ## Build next in this repository
 
@@ -38,10 +42,11 @@ Checked on 2026-11-12 from this repository's docs and from sibling `master` comm
 
 - **Labeler: production proposal wiring and the partial pages.** On 2026-11-07, region review client code existed in `frontend/src/components/right-panel/RegionDetail.tsx` and `frontend/src/hooks/useRegionMutations.ts`. Geometry proposal code existed under `core/regions/`. The handler still fell back to `null_region_detector` when no detector was supplied. That check did not prove every deployed app wires a detector. Every proved page's composed alignment is still ambiguous, changed, or exhausted. See [layout review](../architecture/layout-review.md). Owner: `pdomain-ocr-labeler-spa`.
 - **Source-data: accepted corpus quality, and the extraction residue.** Prove historical data rescue, digest compatibility of stored artifacts, and retirement of the `pd-` repositories. The package move and checked consumer repoints exist. [Extraction plan](../plans/2026-09-01-extract-book-contracts-and-retire-pd-repos.md). Owner: `pdomain-source-data` for stored artifacts, with this repository coordinating the retirement evidence.
-- **Training: a usable layout model and checkpoint.** On 2026-11-07 the runner read region exports, delegated training to a supplied model, and rejected a missing model. That does not prove a production model, a real checkpoint, or a large enough accepted corpus. Training master still requires `pdomain-book-contracts>=0.2.1`. The labeler and source-data require `>=0.3.0`. Owner: `pdomain-ocr-training`.
+- **Training: a usable layout model and checkpoint.** On 2026-11-07 the runner read region exports, delegated training to a supplied model, and rejected a missing model. That does not prove a production model, a real checkpoint, or a large enough accepted corpus. The inspected training, labeler and source-data checkouts declared `pdomain-book-contracts>=0.3.1` on 2026-11-13; deployed versions were not checked. Owner: `pdomain-ocr-training`.
 - **Book-tools: layout fixes that already have no model dependency.** The 2026-11-11 overnight handoff left these open: the floated-caption bug on normalized pages, drop-cap Iteration C, sidenote-aware row blocks, and sidenote x-height projection. The September plan also recorded an x-height-spread figure of 43 to 67 percent with no evidence file. It said to recompute that figure before anything depends on it. Owner: `pdomain-book-tools`. [Handoff](../handoff/2026-11-11-125544-pdomain-overnight-branches-await-owner-review.md).
 - **Prep-for-PGDP: its own app.** Overnight branches from 2026-11-10 await owner review. The 2026-09-12 survey said the app could not finish a book. Do not treat that survey as the current state. Owner: `pdomain-prep-for-pgdp`.
-- **Contracts: move the module-layout spec.** The package and its tree live in `pdomain-book-contracts`. The layout writeup still sits here as [Book Contracts Module Layout](../specs/2026-09-02-book-contracts-module-layout.md). Move that current description into the contracts repository. Do not grow contracts code inside `pdomain-ops`.
+- **Contracts: keep the package boundary with its owner.** The package and its tree live in `pdomain-book-contracts`. The implemented spec is preserved here as [Book contracts package boundary](../architecture/book-contracts-boundary.md). Moving its maintained description into the contracts repository remains that repository's work; this migration writes only ops docs. Do not grow contracts code inside `pdomain-ops`.
+- **Book-tools: legacy OCR matching shim.** The module-layout spec excluded `ocr/ground_truth_matching.py`, which is superseded by `matching/engine.py`. Its retirement remains separate work. The [package boundary](../architecture/book-contracts-boundary.md) preserves that limit; this docs migration changes no consumer code.
 
 ## Consider a separate repository
 
