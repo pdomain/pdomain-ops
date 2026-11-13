@@ -18,9 +18,10 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("return_shape", ["document", "tuple"])
 @pytest.mark.asyncio
-async def test_run_doctr_batch_returns_page_per_image() -> None:
-    """run_doctr_batch returns one page dict per input image, in order."""
+async def test_run_doctr_batch_returns_page_per_image(return_shape: str) -> None:
+    """run_doctr_batch returns one page per image for a Document or a degree tuple."""
     from pdomain_ops.gpu.doctr_batch import run_doctr_batch
 
     img_a = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -38,10 +39,22 @@ async def test_run_doctr_batch_returns_page_per_image() -> None:
 
     import pdomain_book_tools.ocr.document as _doc_mod
 
+    def _fake_ocr(
+        cls: Any,
+        images: list[Any],
+        source_identifiers: list[str] | None = None,
+        predictor: Any = None,
+        **kw: Any,
+    ) -> MagicMock | tuple[MagicMock, list[int]]:
+        if return_shape == "tuple":
+            # Unpublished book-tools c34981b: Document, then one clockwise degree per page.
+            return (fake_doc, [90, 0])
+        return fake_doc
+
     with patch.object(
         _doc_mod.Document,
         "from_images_ocr_via_doctr",
-        classmethod(lambda cls, images, source_identifiers=None, predictor=None, **kw: fake_doc),
+        classmethod(_fake_ocr),
     ):
         result = run_doctr_batch([img_a, img_b], predictor=stub_predictor, device="cpu")
 
@@ -208,8 +221,12 @@ async def test_oom_once_halves_batch_size_and_succeeds() -> None:
     mock_cache.assert_called_once()
 
 
+@pytest.mark.parametrize("return_shape", ["document", "tuple"])
 @pytest.mark.asyncio
-async def test_oom_at_floor_falls_back_to_cpu(caplog: pytest.LogCaptureFixture) -> None:
+async def test_oom_at_floor_falls_back_to_cpu(
+    caplog: pytest.LogCaptureFixture,
+    return_shape: str,
+) -> None:
     """When det_bs==1 still OOMs, fall back to per-image CPU path with a warning."""
     import logging
 
@@ -232,11 +249,13 @@ async def test_oom_at_floor_falls_back_to_cpu(caplog: pytest.LogCaptureFixture) 
         source_identifiers: list[str] | None = None,
         predictor: Any = None,
         **kw: Any,
-    ) -> MagicMock:
+    ) -> MagicMock | tuple[MagicMock, list[int]]:
         call_count["gpu_calls"] += 1
         if predictor is stub_predictor:
             raise RuntimeError("CUDA out of memory")
-        # CPU fallback predictor (or no predictor) succeeds
+        # CPU fallback predictor (or no predictor) succeeds.
+        if return_shape == "tuple":
+            return (fake_doc, [180])
         return fake_doc
 
     import pdomain_book_tools.ocr.document as _doc_mod

@@ -30,7 +30,7 @@ The following exception types are treated as GPU OOM:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -77,6 +77,20 @@ def _decode_image(img: np.ndarray | bytes) -> np.ndarray:
     return decoded
 
 
+def _document_from_ocr_result(result: Any) -> Any:
+    """Return the Document from either book-tools batch-OCR shape.
+
+    Published pdomain-book-tools 0.30.1 returns a Document. Unpublished
+    commit c34981b returns ``(Document, clockwise_degrees)``. The degree
+    list is unused.
+    """
+    if isinstance(result, tuple):
+        # 0.30.1 returns a Document. c34981b returns (Document, degrees), which
+        # the installed stub does not describe, so the first item is taken as Any.
+        return cast("Any", result[0])
+    return result
+
+
 def _cpu_fallback_single(image: np.ndarray, source_id: str) -> Any:
     """Run single-image CPU DocTR OCR as a last-resort OOM fallback.
 
@@ -86,10 +100,12 @@ def _cpu_fallback_single(image: np.ndarray, source_id: str) -> Any:
     """
     from pdomain_book_tools.ocr.document import Document
 
-    doc = Document.from_images_ocr_via_doctr(
-        images=[image],
-        source_identifiers=[source_id],
-        # No predictor -- stock CPU weights, no VRAM pressure.
+    doc = _document_from_ocr_result(
+        Document.from_images_ocr_via_doctr(
+            images=[image],
+            source_identifiers=[source_id],
+            # No predictor -- stock CPU weights, no VRAM pressure.
+        )
     )
     if not doc.pages:
         msg = f"CPU OCR fallback produced no page for source {source_id!r}"
@@ -159,10 +175,12 @@ def run_doctr_batch(
 
     while True:
         try:
-            doc = Document.from_images_ocr_via_doctr(
-                images=decoded,
-                source_identifiers=list(source_identifiers),
-                predictor=current_predictor,
+            doc = _document_from_ocr_result(
+                Document.from_images_ocr_via_doctr(
+                    images=decoded,
+                    source_identifiers=list(source_identifiers),
+                    predictor=current_predictor,
+                )
             )
             return list(doc.pages)
 
