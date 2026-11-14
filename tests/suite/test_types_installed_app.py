@@ -59,3 +59,22 @@ def test_installed_app_description_roundtrip():
     roundtripped = InstalledApp.model_validate(data)
     assert roundtripped == app
     assert roundtripped.description == "round-trip check"
+
+
+@pytest.mark.parametrize(
+    "binary",
+    [
+        # Real value from Windows 11 on 2026-11-13, which the validator rejected.
+        r"C:\Users\pdtest\.local\bin\pdomain-ocr-simple-gui.exe",
+        "C:/Users/pdtest/.local/bin/pdomain-ocr-simple-gui.exe",
+        r"\\host.lan\Data\tools\app.exe",
+    ],
+)
+def test_installed_app_accepts_windows_absolute_binary(binary):
+    assert _make_app(binary=binary).binary == binary
+
+
+@pytest.mark.parametrize("binary", [r"bin\app.exe", r"C:app.exe", r"\app.exe"])
+def test_installed_app_rejects_windows_relative_binary(binary):
+    with pytest.raises(ValidationError):
+        _make_app(binary=binary)

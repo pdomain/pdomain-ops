@@ -150,3 +150,20 @@ def test_custom_host_passed_to_find_port_and_url(capsys):
     mock_find.assert_called_once_with(preferred=_PREFERRED, host=_ALL_INTERFACES)
     captured = capsys.readouterr()
     assert f"http://{_ALL_INTERFACES}:" in captured.out
+
+
+def test_startup_line_survives_a_non_utf8_stdout(monkeypatch):
+    """Windows Python writes cp1252 to a redirected stdout. The rocket emoji
+    then raised UnicodeEncodeError and the app exited before serving."""
+    import io
+    import sys
+
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", stream)
+    with _make_find_port_patch(_PREFERRED), _make_register_patch():
+        result = bootstrap_spa(preferred=_PREFERRED, caller_package="my_app")
+    stream.flush()
+
+    assert result == _PREFERRED
+    assert f"my_app at http://127.0.0.1:{_PREFERRED}/" in raw.getvalue().decode("cp1252")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -42,8 +43,13 @@ class InstalledApp(BaseModel):
     @field_validator("binary")
     @classmethod
     def binary_must_be_absolute(cls, v: str) -> str:
-        """Validate that binary path is absolute."""
-        if not v.startswith("/"):
+        r"""Validate that binary path is absolute on POSIX or Windows.
+
+        A registry entry written on Windows holds a path such as
+        ``C:\Users\me\.local\bin\app.exe``; a drive-relative ``C:app.exe``
+        or root-relative ``\app.exe`` is still rejected.
+        """
+        if not (PurePosixPath(v).is_absolute() or PureWindowsPath(v).is_absolute()):
             raise ValueError(f"binary path must be absolute, got: {v!r}")
         return v
 
