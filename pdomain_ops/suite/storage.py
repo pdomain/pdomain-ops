@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import runtime_checkable
 
 from typing_extensions import Protocol
@@ -41,10 +41,15 @@ class LocalFsStorage:
         self._root.mkdir(parents=True, exist_ok=True)
 
     def _resolve(self, key: str) -> Path:
-        if key.startswith("/"):
+        # Keys are portable: reject POSIX roots and Windows drive or UNC roots
+        # on every platform.
+        if PurePosixPath(key).is_absolute() or PureWindowsPath(key).anchor:
             raise ValueError(f"Storage key must be relative, got: {key!r}")
+        root = self._root.resolve()
         resolved = (self._root / key).resolve()
-        if not str(resolved).startswith(str(self._root.resolve())):
+        # Compare path parts: a string prefix check let "../storex" escape a
+        # root named "store", and never matched Windows separators.
+        if resolved == root or not resolved.is_relative_to(root):
             raise ValueError(f"Path traversal detected in key: {key!r}")
         return resolved
 

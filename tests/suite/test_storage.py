@@ -44,3 +44,21 @@ def test_local_fs_storage_creates_intermediate_dirs(tmp_path):
     storage = LocalFsStorage(root=tmp_path)
     storage.write("a/b/c.json", b"data")
     assert (tmp_path / "a" / "b" / "c.json").exists()
+
+
+def test_local_fs_storage_rejects_sibling_with_shared_prefix(tmp_path):
+    """`root/../storex` shares the prefix "store" with `root`; a plain
+    string-prefix check let it through."""
+    root = tmp_path / "store"
+    (tmp_path / "storex").mkdir()
+    s = LocalFsStorage(root=root)
+    with pytest.raises(ValueError, match="traversal"):
+        s.write("../storex/escaped.txt", b"x")
+    assert not (tmp_path / "storex" / "escaped.txt").exists()
+
+
+@pytest.mark.parametrize("key", [r"C:\Windows\x.txt", "C:/Windows/x.txt", r"\\server\share\x.txt"])
+def test_local_fs_storage_rejects_windows_absolute_keys(tmp_path, key):
+    s = LocalFsStorage(root=tmp_path)
+    with pytest.raises(ValueError, match="relative"):
+        s.write(key, b"x")
