@@ -13,6 +13,13 @@ Kind: changelog
 No unreleased runtime changes are recorded here. This changelog is selective;
 Git tags and history cover releases without a section below.
 
+### Changed
+
+- Require `pdomain-book-tools>=0.31.3`, which depends on `opencv-python`
+  instead of `opencv-contrib-python`. Environments now hold a single OpenCV
+  package, so `import cv2` no longer breaks at random. A packaging test
+  asserts this.
+
 ## [0.11.1] - 2026-07-14
 
 ### Fixed

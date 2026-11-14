@@ -14,6 +14,7 @@ pdomain-ops aligned.
 
 from __future__ import annotations
 
+import importlib.metadata
 import subprocess
 import sys
 import zipfile
@@ -74,3 +75,24 @@ def test_py_typed_marker_shipped_in_wheel(tmp_path: Path) -> None:
         "pdomain_ops/py.typed is missing from the built wheel — the PEP 561 "
         f"typing marker would not ship. Wheel contents: {sorted(names)}"
     )
+
+
+def test_exactly_one_opencv_distribution_installed() -> None:
+    """Only ``opencv-python`` may be installed among the OpenCV variants.
+
+    Every variant writes into ``cv2/``, so two of them in one environment
+    randomly break ``import cv2``. pdomain-book-tools 0.31.3 depends on
+    ``opencv-python``; nothing else should pull in another variant.
+    """
+    variants = {
+        "opencv-python",
+        "opencv-contrib-python",
+        "opencv-python-headless",
+        "opencv-contrib-python-headless",
+    }
+    installed = {
+        name.lower().replace("_", "-")
+        for dist in importlib.metadata.distributions()
+        if (name := dist.metadata["Name"]) is not None
+    } & variants
+    assert installed == {"opencv-python"}
