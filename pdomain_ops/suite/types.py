@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import PurePosixPath, PureWindowsPath
@@ -43,13 +44,15 @@ class InstalledApp(BaseModel):
     @field_validator("binary")
     @classmethod
     def binary_must_be_absolute(cls, v: str) -> str:
-        r"""Validate that binary path is absolute on POSIX or Windows.
+        r"""Validate that binary path is absolute on the running OS.
 
-        A registry entry written on Windows holds a path such as
-        ``C:\Users\me\.local\bin\app.exe``; a drive-relative ``C:app.exe``
-        or root-relative ``\app.exe`` is still rejected.
+        On Windows that means a path such as ``C:\Users\me\.local\bin\app.exe``
+        or a UNC path; drive-relative ``C:app.exe`` and root-relative
+        ``\app.exe`` are rejected. The binary is launched and checked with
+        ``Path`` on this OS, so the other OS's absolute form is not accepted.
         """
-        if not (PurePosixPath(v).is_absolute() or PureWindowsPath(v).is_absolute()):
+        flavour = PureWindowsPath if os.name == "nt" else PurePosixPath
+        if not flavour(v).is_absolute():
             raise ValueError(f"binary path must be absolute, got: {v!r}")
         return v
 

@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 
 from pdomain_ops.suite.ports import find_available_port
 from pdomain_ops.suite.register_self import register_self
@@ -122,14 +121,13 @@ def bootstrap_spa(
     # --- 4. Print startup URL ---
     label = url_label if url_label is not None else caller_package
     line = f"🚀 {label} at http://{host}:{port}/"
-    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     try:
-        _ = line.encode(encoding)
-    except (UnicodeEncodeError, LookupError):
+        print(line)  # noqa: T201  # startup URL is intentional CLI output
+    except UnicodeEncodeError:
         # Windows Python writes cp1252 to a redirected stdout, which has no
         # emoji; printing it raised and stopped the app before it served.
-        line = line.removeprefix("🚀 ")
-    print(line)  # noqa: T201  # startup URL is intentional CLI output
+        # Encoding fails before any bytes are written, so nothing is doubled.
+        print(line.removeprefix("🚀 "))  # noqa: T201  # startup URL is intentional CLI output
 
     # --- 5. Return the bound port ---
     return port

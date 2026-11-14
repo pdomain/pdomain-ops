@@ -81,7 +81,7 @@ class LocalFsStorage:
         base = self._root.resolve()
         prefix_path = (self._root / prefix).resolve()
         return sorted(
-            str(p.resolve().relative_to(base))
+            p.resolve().relative_to(base).as_posix()
             for p in self._root.rglob("*")
             if p.is_file() and str(p.resolve()).startswith(str(prefix_path))
         )

@@ -62,3 +62,11 @@ def test_local_fs_storage_rejects_windows_absolute_keys(tmp_path, key):
     s = LocalFsStorage(root=tmp_path)
     with pytest.raises(ValueError, match="relative"):
         s.write(key, b"x")
+
+
+def test_local_fs_storage_list_prefix_returns_posix_keys(tmp_path):
+    """Keys are portable: list_prefix must return "a/b.txt", not "a\\b.txt"
+    on Windows."""
+    s = LocalFsStorage(root=tmp_path)
+    s.write("a/b.txt", b"x")
+    assert s.list_prefix("a") == ["a/b.txt"]

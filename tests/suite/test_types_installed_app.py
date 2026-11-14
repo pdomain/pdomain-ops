@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from pdomain_ops.suite import types as types_module
 from pdomain_ops.suite.types import InstalledApp
 
 
@@ -70,11 +71,21 @@ def test_installed_app_description_roundtrip():
         r"\\host.lan\Data\tools\app.exe",
     ],
 )
-def test_installed_app_accepts_windows_absolute_binary(binary):
+def test_installed_app_accepts_windows_absolute_binary_on_windows(monkeypatch, binary):
+    monkeypatch.setattr(types_module.os, "name", "nt")
     assert _make_app(binary=binary).binary == binary
 
 
-@pytest.mark.parametrize("binary", [r"bin\app.exe", r"C:app.exe", r"\app.exe"])
-def test_installed_app_rejects_windows_relative_binary(binary):
+@pytest.mark.parametrize("binary", [r"bin\app.exe", r"C:app.exe", r"\app.exe", "/usr/bin/app"])
+def test_installed_app_rejects_non_absolute_binary_on_windows(monkeypatch, binary):
+    monkeypatch.setattr(types_module.os, "name", "nt")
+    with pytest.raises(ValidationError):
+        _make_app(binary=binary)
+
+
+@pytest.mark.parametrize("binary", [r"C:\Users\me\app.exe", "C:/Users/me/app.exe"])
+def test_installed_app_rejects_windows_binary_on_posix(monkeypatch, binary):
+    """A Windows path is a relative name for Path on POSIX; it cannot launch."""
+    monkeypatch.setattr(types_module.os, "name", "posix")
     with pytest.raises(ValidationError):
         _make_app(binary=binary)
