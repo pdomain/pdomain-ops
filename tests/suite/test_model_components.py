@@ -90,3 +90,26 @@ def test_preview_finds_old_tracked_revision_in_selected_cache_only(tmp_path: Pat
     for entry in (old, unrelated):
         track_model_download("cli", "installer", (entry,), entry.path.touch, registry=registry)
     assert [item.path for item in preview_cached_models(registry, "cli", cache)] == [old.path]
+
+
+def test_runtime_download_adds_a_new_revision_to_app_cleanup(tmp_path: Path) -> None:
+    app = "pdomain-ocr-cli"
+    registry = ComponentRegistry(tmp_path / "components.json")
+    cache = tmp_path / "cache"
+    installed = ModelCacheEntry(cache, "pdomain/models", "a" * 40, "model.pt")
+    updated = ModelCacheEntry(cache, "pdomain/models", "b" * 40, "model.pt")
+    for entry in (installed, updated):
+        entry.path.parent.mkdir(parents=True)
+    track_model_download(app, "installer", (installed,), installed.path.touch, registry=registry)
+    track_model_download(app, "runtime", (updated,), updated.path.touch, registry=registry)
+    records = {record.identity: record for record in registry.list()}
+    assert records[installed.identity].source == "installer"
+    assert records[updated.identity].source == "runtime"
+    assert {item.path for item in preview_cached_models(registry, app, cache)} == {
+        installed.path,
+        updated.path,
+    }
+    track_model_download(
+        "pdomain-ocr-simple-gui", "runtime", (updated,), lambda: None, registry=registry
+    )
+    assert [item.path for item in preview_cached_models(registry, app, cache)] == [installed.path]
