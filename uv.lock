@@ -2613,6 +2613,7 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli" },
     { name = "tomli-w" },
+    { name = "typing-extensions" },
     { name = "uvicorn" },
 ]
 
@@ -2662,6 +2663,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=1.6.0" },
     { name = "tomli", specifier = ">=2.4" },
     { name = "tomli-w", specifier = ">=1.2" },
+    { name = "typing-extensions", specifier = ">=4.4" },
     { name = "uvicorn", specifier = ">=0.52" },
 ]
 provides-extras = ["desktop", "modal"]
