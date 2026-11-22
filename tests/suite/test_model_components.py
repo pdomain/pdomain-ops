@@ -44,6 +44,24 @@ def test_external_link_and_traversal_are_rejected(tmp_path: Path) -> None:
     assert output.read_text() == "OCR output"
 
 
+def test_snapshot_removal_keeps_deduplicated_blob_and_repository_alias(tmp_path: Path) -> None:
+    entry = ModelCacheEntry(tmp_path, "pdomain/models", "a" * 40, "nested/model.pt")
+    entry.path.parent.mkdir(parents=True)
+    digest = "ab" * 32
+    blob = tmp_path / "blobs" / digest[:2] / digest
+    blob.parent.mkdir(parents=True)
+    _ = blob.write_bytes(b"weights")
+    alias = tmp_path / "models--pdomain--models" / "blobs" / ("cd" * 32)
+    alias.parent.mkdir()
+    alias.symlink_to(blob)
+    entry.path.symlink_to(Path("../../..") / "blobs" / alias.name)
+    fingerprint = entry.fingerprint()
+    assert fingerprint is not None
+    entry.remove(fingerprint)
+    assert not entry.path.is_symlink()
+    assert alias.read_bytes() == b"weights"
+
+
 def test_model_cleanup_rechecks_preview_and_siblings(tmp_path: Path) -> None:
     registry = ComponentRegistry(tmp_path / "components.json")
     entry = ModelCacheEntry(tmp_path, "pdomain/models", "a" * 40, "model.pt")

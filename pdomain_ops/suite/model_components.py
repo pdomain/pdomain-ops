@@ -150,16 +150,32 @@ class ModelCacheEntry:
             return None
         details = file_identity(info)
         if stat.S_ISLNK(info.st_mode):
-            blob = self.path.resolve(strict=True)
-            if blob.parent != self._repo / "blobs":
+            target = self.path.parent / self.path.readlink()
+            alias = target.parent.resolve(strict=True) / target.name
+            if alias.parent != self._repo / "blobs":
                 raise ValueError(
                     "The snapshot link must reference a blob in the same cache repository"
                 )
+            blob = self.path.resolve(strict=True)
+            shared_blobs = self._repo.parent / "blobs"
+            shared = (
+                re.fullmatch(r"[0-9a-f]{64}", blob.name) is not None
+                and blob.parent == shared_blobs / blob.name[:2]
+            )
+            if blob != alias and not shared:
+                raise ValueError("The repository blob points outside the shared cache blob store")
             blob_stat = blob.lstat()
             if not stat.S_ISREG(blob_stat.st_mode):
                 raise ValueError("The model blob must be a regular file")
+            alias_details = file_identity(alias.lstat()) if shared else ()
             return ":".join(
-                [str(blob), *(str(value) for value in (*details, *file_identity(blob_stat)))]
+                [
+                    str(blob),
+                    *(
+                        str(value)
+                        for value in (*details, *alias_details, *file_identity(blob_stat))
+                    ),
+                ]
             )
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("The model entry must be a file or snapshot link")
