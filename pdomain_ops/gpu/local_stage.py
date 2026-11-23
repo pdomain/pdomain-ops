@@ -120,6 +120,21 @@ class LocalStageDispatcher:
             metadata=result_dict or {},
         )
 
+    @staticmethod
+    def _run_tesseract_batch(req: OcrBatchRequest) -> list[dict[str, object]]:
+        import cv2
+        import numpy as np
+        from pdomain_book_tools.ocr.cv2_tesseract import tesseract_ocr_cv2_image
+
+        results: list[dict[str, object]] = []
+        for image_bytes, source in zip(req.images, req.source_identifiers, strict=True):
+            pixels = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if pixels is None:
+                raise ValueError(f"Could not decode OCR image {source}")
+            page = tesseract_ocr_cv2_image(pixels, source_path=source, lang=req.language)
+            results.append(page.to_dict())
+        return results
+
     async def run_ocr_batch(self, req: OcrBatchRequest) -> list[dict[str, object]]:
         """Run batched OCR on multiple pages.
 
@@ -132,7 +147,13 @@ class LocalStageDispatcher:
         backoff can rebuild a predictor at reduced batch sizes and store it
         back under its own cache key.
         """
-        from pdomain_ops.gpu.default_stages import get_or_build_predictor
+        if req.engine == "tesseract":
+            return await asyncio.to_thread(self._run_tesseract_batch, req)
+
+        from pdomain_ops.gpu.default_stages import (
+            get_or_build_predictor,
+            resolve_cached_doctr_snapshot,
+        )
         from pdomain_ops.gpu.doctr_batch import run_doctr_batch
 
         device = (
@@ -156,7 +177,10 @@ class LocalStageDispatcher:
             except ImportError:
                 return None  # No finetuned models available; run_doctr_batch will use CPU
 
-            det_path, reco_path = resolve_ocr_models()
+            if req.model_revision is None:
+                det_path, reco_path = resolve_ocr_models()
+            else:
+                det_path, reco_path = resolve_cached_doctr_snapshot(req.model_revision)
             cache_key = (str(det_path), str(reco_path), d_bs, r_bs)
             return get_or_build_predictor(
                 cache_key,

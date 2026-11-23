@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -128,6 +129,9 @@ async def _ocr_cpu_impl(page_id: str, device: str, **kwargs: Any) -> dict[str, A
     engine: str = kwargs.get("engine", "doctr")
     language: str = kwargs.get("language", "eng")
 
+    if engine == "doctr" and kwargs.get("model_revision") is not None:
+        return await _ocr_local_impl(page_id, device, **kwargs)
+
     loop = asyncio.get_event_loop()
 
     if engine == "tesseract":
@@ -158,6 +162,27 @@ def _make_doctr_sync(*, image_path: str, page_id: str) -> Any:
     return _run
 
 
+def resolve_cached_doctr_snapshot(revision: str) -> tuple[Path, Path]:
+    """Read both weights from an exact cached snapshot without contacting the Hub."""
+    from huggingface_hub import try_to_load_from_cache
+    from pdomain_book_tools.hf import DEFAULT_DET_FILENAME, DEFAULT_HF_REPO, DEFAULT_RECO_FILENAME
+
+    def cached_path(filename: str) -> Path:
+        cached = try_to_load_from_cache(DEFAULT_HF_REPO, filename, revision=revision)
+        if not isinstance(cached, str):
+            raise FileNotFoundError(
+                f"DocTR model {filename} is missing from {revision}. Retry the model download."
+            )
+        path = Path(cached)
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"DocTR model {filename} is missing from {revision}. Retry the model download."
+            )
+        return path
+
+    return cached_path(DEFAULT_DET_FILENAME), cached_path(DEFAULT_RECO_FILENAME)
+
+
 async def _ocr_local_impl(page_id: str, device: str, **kwargs: Any) -> dict[str, Any]:
     """GPU/finetuned OCR stage — DocTR with pdomain finetuned weights.
 
@@ -185,11 +210,17 @@ async def _ocr_local_impl(page_id: str, device: str, **kwargs: Any) -> dict[str,
 
     # DocTR + finetuned weights.  Resolve paths; on network/HF failure
     # fall through to the stock-CPU impl.
+    revision: str | None = kwargs.get("model_revision")
     try:
         from pdomain_book_tools.hf import resolve_ocr_models
 
-        det_path, reco_path = resolve_ocr_models()
-    except Exception as exc:  # noqa: BLE001 — intentional broad catch for graceful fallback
+        if revision is None:
+            det_path, reco_path = resolve_ocr_models()
+        else:
+            det_path, reco_path = resolve_cached_doctr_snapshot(revision)
+    except Exception as exc:
+        if revision is not None:
+            raise
         _log.warning(
             "resolve_ocr_models() failed (%s: %s); falling through to stock CPU OCR.",
             type(exc).__name__,

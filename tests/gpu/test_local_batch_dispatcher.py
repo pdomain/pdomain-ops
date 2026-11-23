@@ -136,3 +136,48 @@ async def test_local_run_ocr_batch_uses_book_tools_batched_ocr(
 
     assert len(results) == 1
     assert captured["source_identifiers"] == ["p0"]
+
+
+@pytest.mark.asyncio
+async def test_tesseract_batch_does_not_load_doctr(monkeypatch: pytest.MonkeyPatch) -> None:
+    import cv2
+    from pdomain_book_tools.hf import DEFAULT_DET_FILENAME
+    from pdomain_book_tools.ocr import cv2_tesseract
+
+    def unexpected_doctr() -> None:
+        pytest.fail(f"Tesseract loaded DocTR: {DEFAULT_DET_FILENAME}")
+
+    monkeypatch.setattr("pdomain_book_tools.hf.resolve_ocr_models", unexpected_doctr)
+    page = MagicMock()
+    page.to_dict.return_value = {"text": "Tesseract output"}
+    recognize = MagicMock(return_value=page)
+    monkeypatch.setattr(cv2_tesseract, "tesseract_ocr_cv2_image", recognize)
+    encoded, payload = cv2.imencode(".png", np.zeros((8, 8, 3), dtype=np.uint8))
+    assert encoded
+    request = OcrBatchRequest(
+        images=[payload.tobytes()],
+        source_identifiers=["fixture.png"],
+        engine="tesseract",
+        language="eng",
+    )
+
+    assert await LocalStageDispatcher().run_ocr_batch(request) == [{"text": "Tesseract output"}]
+    assert recognize.call_args.kwargs == {"source_path": "fixture.png", "lang": "eng"}
+
+
+def test_exact_snapshot_lookup_is_local_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from pdomain_ops.gpu.default_stages import resolve_cached_doctr_snapshot
+
+    detection = tmp_path / "detection.pt"
+    recognition = tmp_path / "recognition.pt"
+    detection.touch()
+    recognition.touch()
+    resolve = MagicMock(side_effect=[str(detection), str(recognition)])
+    monkeypatch.setattr("huggingface_hub.try_to_load_from_cache", resolve)
+    revision = "a" * 40
+
+    assert resolve_cached_doctr_snapshot(revision) == (detection, recognition)
+    assert resolve.call_count == 2
+    assert all(call.kwargs == {"revision": revision} for call in resolve.call_args_list)
