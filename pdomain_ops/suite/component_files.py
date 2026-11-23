@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pdomain_ops.suite.components import Component, ComponentRegistry
 
+_IS_WINDOWS = os.name == "nt"
+
 
 def install_staged_uv(
     registry: ComponentRegistry, app: str, staged: Path, destination: Path
@@ -38,13 +40,41 @@ def install_staged_uv(
 def file_identity(info: os.stat_result) -> tuple[int, ...]:
     """Identify the filesystem instance described by a stat result."""
     return (
-        info.st_dev,
+        # Python 3.11 exposes the low 32 bits of the Windows volume serial.
+        info.st_dev & 0xFFFFFFFF if _IS_WINDOWS else info.st_dev,
         info.st_ino,
         info.st_mode,
         info.st_size,
-        info.st_ctime_ns,
+        _windows_creation_time(info) if _IS_WINDOWS else info.st_ctime_ns,
         info.st_mtime_ns,
         info.st_nlink,
+    )
+
+
+def _windows_creation_time(info: os.stat_result) -> int:
+    return info.st_birthtime_ns if hasattr(info, "st_birthtime_ns") else info.st_ctime_ns
+
+
+def _open_file_identity(info: os.stat_result) -> tuple[int, ...]:
+    if not _IS_WINDOWS:
+        return file_identity(info)
+    # Windows path stats synthesize executable mode bits and may report birth time as ctime.
+    return (
+        info.st_dev,
+        info.st_ino,
+        stat.S_IFMT(info.st_mode),
+        info.st_size,
+        _windows_creation_time(info),
+        info.st_mtime_ns,
+        info.st_nlink,
+    )
+
+
+def _unchanged(before: os.stat_result, after: os.stat_result) -> bool:
+    return (
+        before.st_dev == after.st_dev
+        and before.st_ctime_ns == after.st_ctime_ns
+        and file_identity(before) == file_identity(after)
     )
 
 
@@ -71,13 +101,18 @@ class ComponentFile:
             return None
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise ValueError(f"Expected an unlinked regular file at {self.path}")
+        if _IS_WINDOWS and info.st_ino == 0:
+            raise ValueError("The component has no verifiable Windows file ID")
         expected = file_identity(info)
         with self.path.open("rb") as stream:
-            if file_identity(os.fstat(stream.fileno())) != expected:
+            opened = os.fstat(stream.fileno())
+            if _open_file_identity(opened) != _open_file_identity(info):
                 raise ValueError("The component changed while opening it")
             content = hashlib.file_digest(stream, "sha256").hexdigest()
-        if file_identity(self.path.lstat()) != expected:
-            raise ValueError("The component changed during verification")
+            if not _unchanged(opened, os.fstat(stream.fileno())) or not _unchanged(
+                info, self.path.lstat()
+            ):
+                raise ValueError("The component changed during verification")
         return ":".join([*(str(field) for field in expected), content])
 
     def remove(self, expected: str) -> None:
