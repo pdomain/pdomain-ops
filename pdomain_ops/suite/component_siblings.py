@@ -9,9 +9,16 @@ from pathlib import Path
 from typing import cast
 
 _UV_METADATA = frozenset({".gitignore", ".lock", ".nobackup", "CACHEDIR.TAG"})
+_CLI_IN_USE_LOCK = ".pdomain-ocr-cli.in-use.lock"
 
 
 def _inactive_cli_lock(path: Path) -> bool:
+    if path.name != _CLI_IN_USE_LOCK:
+        return False
+    if os.name == "nt":
+        from pdomain_ops.suite._windows_cli_lock import inactive_windows_cli_lock
+
+        return inactive_windows_cli_lock(path)
     if os.name != "posix":
         return False
     import fcntl
@@ -46,7 +53,7 @@ def other_uv_tools_absent(roots: tuple[Path, ...], *, departing_tool: str | None
             for child in children:
                 if child.name in _UV_METADATA or (index == 0 and child.name == departing_tool):
                     continue
-                if child.name == ".pdomain-ocr-cli.in-use.lock" and _inactive_cli_lock(child):
+                if _inactive_cli_lock(child):
                     continue
                 return False
     except (OSError, RuntimeError):
