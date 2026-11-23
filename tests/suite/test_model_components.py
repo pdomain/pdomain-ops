@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import errno
-from pathlib import Path
+import os
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -21,7 +22,7 @@ from pdomain_ops.suite.model_components import (
 
 
 def _stage(entry: ModelCacheEntry, cache: Path, content: bytes = b"weights") -> Path:
-    path = entry.in_cache(cache).path
+    path = model_components._filesystem_path(entry.in_cache(cache).path)
     path.parent.mkdir(parents=True)
     _ = path.write_bytes(content)
     return path
@@ -165,7 +166,8 @@ def test_external_publication_during_staging_is_preserved(tmp_path: Path) -> Non
         _ = entry.path.write_bytes(b"incumbent")
         return _stage(entry, cache)
 
-    assert publish_model_download("cli", "installer", entry, fetch, registry=registry) == entry.path
+    result = publish_model_download("cli", "installer", entry, fetch, registry=registry)
+    assert result.samefile(entry.path)
     assert entry.path.read_bytes() == b"incumbent"
     assert not registry.list()
 
@@ -181,12 +183,10 @@ def test_external_publication_at_no_replace_boundary_is_preserved(
         raise FileExistsError(errno.EEXIST, "Model already exists", destination)
 
     monkeypatch.setattr(model_components, "_publish_snapshot", late_publish)
-    assert (
-        publish_model_download(
-            "cli", "installer", entry, lambda stage: _stage(entry, stage), registry=registry
-        )
-        == entry.path
+    result = publish_model_download(
+        "cli", "installer", entry, lambda stage: _stage(entry, stage), registry=registry
     )
+    assert result.samefile(entry.path)
     assert entry.path.read_bytes() == b"incumbent"
     assert not registry.list()
 
@@ -201,16 +201,14 @@ def test_known_publication_survives_failure_to_stage_later_file(tmp_path: Path) 
         _ = _stage(second, stage, b"incomplete")
         raise RuntimeError("network interrupted")
 
-    assert (
-        publish_model_download(
-            "cli", "installer", first, lambda stage: _stage(first, stage), registry=registry
-        )
-        == first.path
+    result = publish_model_download(
+        "cli", "installer", first, lambda stage: _stage(first, stage), registry=registry
     )
+    assert result.samefile(first.path)
     with pytest.raises(RuntimeError, match="network interrupted"):
         _ = publish_model_download("cli", "installer", second, fail, registry=registry)
     assert [record.identity for record in registry.list()] == [first.identity]
-    assert not tuple(first.repository.glob(".pdomain-model-*"))
+    assert not tuple(cache.glob(".pdomain-model-*"))
     assert not second.path.exists()
 
     def unexpected(_stage: Path) -> Path:
@@ -237,6 +235,8 @@ def test_fetcher_uses_private_cache_only_for_pinned_revision(
 
     def download(*, repo_id: str, filename: str, revision: str | None, cache_dir: Path) -> str:
         requests.append(cache_dir)
+        if revision is not None:
+            assert cache_dir.parent.samefile(cache)
         entry = ModelCacheEntry(cache_dir, repo_id, revision or "b" * 40, filename)
         path = _stage(entry, cache_dir)
         return str(path)
@@ -247,11 +247,55 @@ def test_fetcher_uses_private_cache_only_for_pinned_revision(
     _ = fetch("pdomain/models", "other.pt", None)
     assert requests[0] != cache
     assert not requests[0].exists()
-    assert requests[1] == cache
+    assert requests[1].samefile(cache)
     assert path.read_bytes() == b"weights"
     assert not path.is_symlink()
     entry = ModelCacheEntry(cache, "pdomain/models", revision, "model.pt")
     assert [record.identity for record in ComponentRegistry().list()] == [entry.identity]
+
+
+@pytest.mark.parametrize(
+    ("path", "extended"),
+    [
+        (r"C:\cache\stage", r"\\?\C:\cache\stage"),
+        (r"\\server\share\stage", r"\\?\UNC\server\share\stage"),
+        (r"\\?\C:\cache\stage", r"\\?\C:\cache\stage"),
+    ],
+)
+def test_windows_staging_paths_support_extended_length(path: str, extended: str) -> None:
+    assert model_components._windows_extended_path(PureWindowsPath(path)) == extended
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended-length path support")
+def test_windows_long_model_sidecar_is_resolvable_and_removable(tmp_path: Path) -> None:
+    cache = tmp_path / ("a" * 100) / ("b" * 100)
+    repo = "pdomain/models"
+    revision = "a" * 40
+    model = ModelCacheEntry(cache, repo, revision, "recognition/model.pt")
+    sidecar = ModelCacheEntry(cache, repo, revision, "recognition/model.vocab")
+    registry = ComponentRegistry(tmp_path / "components.json")
+
+    runtime_path = publish_model_download(
+        "cli", "installer", model, lambda stage: _stage(model, stage), registry=registry
+    )
+    _ = publish_model_download(
+        "cli",
+        "installer",
+        sidecar,
+        lambda stage: _stage(sidecar, stage, b"words"),
+        registry=registry,
+    )
+    assert runtime_path.with_suffix(".vocab").read_bytes() == b"words"
+    assert len(str(sidecar.path)) > 260
+    assert not str(sidecar.path).startswith("\\\\?\\")
+    assert {item.identity for item in registry.list()} == {model.identity, sidecar.identity}
+
+    selections = preview_cached_models(registry, "cli", cache)
+    assert {selection.path for selection in selections} == {model.path, sidecar.path}
+    for selection in selections:
+        assert remove_model_entry(registry, "cli", selection, siblings_safe=lambda: True)
+    assert not runtime_path.exists()
+    assert not runtime_path.with_suffix(".vocab").exists()
 
 
 def test_registry_write_failure_retains_published_model_without_claim(
@@ -275,14 +319,12 @@ def test_registry_write_failure_retains_published_model_without_claim(
             )
 
     assert entry.path.read_bytes() == b"weights"
-    assert not tuple(entry.repository.glob(".pdomain-model-*"))
+    assert not tuple(cache.glob(".pdomain-model-*"))
 
     def unexpected_fetch(_stage: Path) -> Path:
         pytest.fail("The published model should survive the registry error")
 
-    assert (
-        publish_model_download("cli", "runtime", entry, unexpected_fetch, registry=registry)
-        == entry.path
-    )
+    result = publish_model_download("cli", "runtime", entry, unexpected_fetch, registry=registry)
+    assert result.samefile(entry.path)
     assert not registry.list()
     assert not preview_cached_models(registry, "cli", cache)

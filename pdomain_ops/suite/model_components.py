@@ -8,7 +8,7 @@ import os
 import re
 import stat
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
@@ -59,7 +59,7 @@ def preview_cached_models(
     cache: Path,
 ) -> tuple[ModelCleanupSelection, ...]:
     """Preview all tracked revisions in the selected Hugging Face cache."""
-    root = cache.resolve()
+    root = _canonical_path(cache)
     selections: list[ModelCleanupSelection] = []
     for record in registry.list():
         if record.kind != "model" or record.claims != (app,):
@@ -175,6 +175,36 @@ def _claim_existing(
     return present
 
 
+def _windows_extended_path(path: PureWindowsPath) -> str:
+    text = str(path)
+    if text.startswith(("\\\\?\\", "\\\\.\\")):
+        return text
+    if text.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + text[2:]
+    return "\\\\?\\" + text
+
+
+def _filesystem_path(path: Path) -> Path:
+    if os.name == "nt" and path.is_absolute():
+        return Path(_windows_extended_path(PureWindowsPath(path)))
+    return path
+
+
+def _without_windows_prefix(path: Path) -> Path:
+    if os.name != "nt":
+        return path
+    text = str(path)
+    if text.upper().startswith("\\\\?\\UNC\\"):
+        return Path("\\\\" + text[8:])
+    if len(path.drive) == 6 and path.drive.startswith("\\\\?\\") and path.drive.endswith(":"):
+        return Path(text[4:])
+    return path
+
+
+def _canonical_path(path: Path) -> Path:
+    return _without_windows_prefix(_filesystem_path(path.absolute()).resolve())
+
+
 def publish_model_download(
     app: str,
     source: str,
@@ -185,26 +215,36 @@ def publish_model_download(
 ) -> Path:
     """Download in private staging and claim only an exact no-replace publication."""
     store = registry if registry is not None else ComponentRegistry()
+    destination = _filesystem_path(entry.path)
     if _claim_existing(store, app, source, entry):
-        return entry.path
+        return destination
 
-    entry.path.parent.mkdir(parents=True, exist_ok=True)
-    staging_parent = entry.repository
-    if staging_parent.stat().st_dev != entry.path.parent.stat().st_dev:
-        staging_parent = entry.path.parent
+    destination_parent = destination.parent
+    destination_parent.mkdir(parents=True, exist_ok=True)
+    destination_device = destination_parent.stat().st_dev
+    repository = _filesystem_path(entry.repository)
+    staging_parent = next(
+        parent
+        for parent in (repository.parent, repository, destination_parent)
+        if parent.stat().st_dev == destination_device
+    )
+    if staging_parent.resolve() != staging_parent:
+        raise _NoReplaceUnavailableError("The model staging parent is redirected")
     with TemporaryDirectory(prefix=".pdomain-model-", dir=staging_parent) as directory:
         cache = Path(directory)
+        (cache / ".nobackup").touch()
         staged = entry.in_cache(cache)
-        if fetch(cache) != staged.path or staged.fingerprint() is None:
+        snapshot = _filesystem_path(staged.path)
+        if _filesystem_path(fetch(cache)) != snapshot or staged.fingerprint() is None:
             raise ValueError("Download returned a different model or revision")
-        payload = staged.path.resolve(strict=True)
+        payload = snapshot.resolve(strict=True)
         if not payload.is_relative_to(cache):
             raise ValueError("Staged model points outside the private download cache")
         published: str | None = None
 
         def install() -> None:
             nonlocal published
-            published = _publish_snapshot(payload, entry.path)
+            published = _publish_snapshot(payload, destination)
 
         def probe() -> str | None:
             fingerprint = entry.fingerprint()
@@ -219,7 +259,8 @@ def publish_model_download(
             # A Hugging Face writer can publish independently of the component registry.
             if not _claim_existing(store, app, source, entry):
                 raise
-    return entry.path
+    # Sidecars derived from the returned path can exceed MAX_PATH even when the model does not.
+    return destination
 
 
 @runtime_checkable
@@ -257,7 +298,7 @@ def make_model_file_fetcher(app: str, source: str) -> Callable[[str, str, str | 
                     return publish_model_download(app, source, entry, download)
                 except _NoReplaceUnavailableError:
                     pass
-        return download(cache)
+        return _filesystem_path(download(_filesystem_path(cache)))
 
     return fetch
 
@@ -285,7 +326,7 @@ class ModelCacheEntry:
         self._repo_id = repo
         self._revision = revision
         self._filename = filename
-        self._repo = cache.resolve() / ("models--" + "--".join(repo_parts))
+        self._repo = _canonical_path(cache) / ("models--" + "--".join(repo_parts))
         self.path = self._repo / "snapshots" / revision / relative
 
     @property
@@ -304,22 +345,24 @@ class ModelCacheEntry:
 
     def fingerprint(self) -> str | None:
         """Validate the snapshot and identify its current file or link."""
-        if self.path.parent.resolve() != self.path.parent:
+        path = _filesystem_path(self.path)
+        if path.parent.resolve() != path.parent:
             raise ValueError("The snapshot directory is redirected")
         try:
-            info = self.path.lstat()
+            info = path.lstat()
         except FileNotFoundError:
             return None
         details = file_identity(info)
         if stat.S_ISLNK(info.st_mode):
-            target = self.path.parent / self.path.readlink()
+            repo = _filesystem_path(self._repo)
+            target = _filesystem_path(path.parent / path.readlink())
             alias = target.parent.resolve(strict=True) / target.name
-            if alias.parent != self._repo / "blobs":
+            if alias.parent != repo / "blobs":
                 raise ValueError(
                     "The snapshot link must reference a blob in the same cache repository"
                 )
-            blob = self.path.resolve(strict=True)
-            shared_blobs = self._repo.parent / "blobs"
+            blob = path.resolve(strict=True)
+            shared_blobs = repo.parent / "blobs"
             shared = (
                 re.fullmatch(r"[0-9a-f]{64}", blob.name) is not None
                 and blob.parent == shared_blobs / blob.name[:2]
@@ -332,7 +375,7 @@ class ModelCacheEntry:
             alias_details = file_identity(alias.lstat()) if shared else ()
             return ":".join(
                 [
-                    str(blob),
+                    str(_without_windows_prefix(blob)),
                     *(
                         str(value)
                         for value in (*details, *alias_details, *file_identity(blob_stat))
@@ -347,4 +390,4 @@ class ModelCacheEntry:
         """Remove one verified snapshot entry, retaining any shared blob."""
         if self.fingerprint() != expected:
             raise ValueError("The model entry changed before removal")
-        self.path.unlink()
+        _filesystem_path(self.path).unlink()
