@@ -1,17 +1,30 @@
-"""Model cleanup stays within one exact snapshot entry."""
+"""Model cleanup stays within the exact published snapshot."""
 
+from __future__ import annotations
+
+import errno
 from pathlib import Path
 
 import pytest
 
+from pdomain_ops.suite import model_components
 from pdomain_ops.suite.components import ComponentRegistry
 from pdomain_ops.suite.model_components import (
     ModelCacheEntry,
+    make_model_file_fetcher,
     preview_cached_models,
     preview_model_cleanup,
+    publish_model_download,
     remove_model_entry,
     track_model_download,
 )
+
+
+def _stage(entry: ModelCacheEntry, cache: Path, content: bytes = b"weights") -> Path:
+    path = entry.in_cache(cache).path
+    path.parent.mkdir(parents=True)
+    _ = path.write_bytes(content)
+    return path
 
 
 def test_removing_snapshot_link_keeps_shared_blob_and_other_revision(tmp_path: Path) -> None:
@@ -66,7 +79,9 @@ def test_model_cleanup_rechecks_preview_and_siblings(tmp_path: Path) -> None:
     registry = ComponentRegistry(tmp_path / "components.json")
     entry = ModelCacheEntry(tmp_path, "pdomain/models", "a" * 40, "model.pt")
     entry.path.parent.mkdir(parents=True)
-    track_model_download("cli", "setup", (entry,), entry.path.touch, registry=registry)
+    _ = publish_model_download(
+        "cli", "setup", entry, lambda cache: _stage(entry, cache), registry=registry
+    )
     (selection,) = preview_model_cleanup(registry, "cli", (entry,))
     assert selection.path == entry.path
     assert not remove_model_entry(registry, "cli", selection, siblings_safe=lambda: False)
@@ -88,7 +103,11 @@ def test_preview_finds_old_tracked_revision_in_selected_cache_only(tmp_path: Pat
         entry.path.parent.mkdir(parents=True)
     untracked.path.touch()
     for entry in (old, unrelated):
-        track_model_download("cli", "installer", (entry,), entry.path.touch, registry=registry)
+
+        def fetch(cache: Path, model: ModelCacheEntry = entry) -> Path:
+            return _stage(model, cache)
+
+        _ = publish_model_download("cli", "installer", entry, fetch, registry=registry)
     assert [item.path for item in preview_cached_models(registry, "cli", cache)] == [old.path]
 
 
@@ -100,8 +119,12 @@ def test_runtime_download_adds_a_new_revision_to_app_cleanup(tmp_path: Path) -> 
     updated = ModelCacheEntry(cache, "pdomain/models", "b" * 40, "model.pt")
     for entry in (installed, updated):
         entry.path.parent.mkdir(parents=True)
-    track_model_download(app, "installer", (installed,), installed.path.touch, registry=registry)
-    track_model_download(app, "runtime", (updated,), updated.path.touch, registry=registry)
+    _ = publish_model_download(
+        app, "installer", installed, lambda stage: _stage(installed, stage), registry=registry
+    )
+    _ = publish_model_download(
+        app, "runtime", updated, lambda stage: _stage(updated, stage), registry=registry
+    )
     records = {record.identity: record for record in registry.list()}
     assert records[installed.identity].source == "installer"
     assert records[updated.identity].source == "runtime"
@@ -113,3 +136,153 @@ def test_runtime_download_adds_a_new_revision_to_app_cleanup(tmp_path: Path) -> 
         "pdomain-ocr-simple-gui", "runtime", (updated,), lambda: None, registry=registry
     )
     assert [item.path for item in preview_cached_models(registry, app, cache)] == [installed.path]
+
+
+def test_opaque_cache_hit_cannot_claim_files_created_by_another_process(tmp_path: Path) -> None:
+    registry = ComponentRegistry(tmp_path / "components.json")
+    cache = tmp_path / "hub"
+    entry = ModelCacheEntry(cache, "pdomain/models", "a" * 40, "model.pt")
+
+    def cache_hit() -> Path:
+        entry.path.parent.mkdir(parents=True)
+        _ = entry.path.write_bytes(b"incumbent")
+        return entry.path
+
+    assert (
+        track_model_download("gui", "installer", (entry,), cache_hit, registry=registry)
+        == entry.path
+    )
+    assert not registry.list()
+    assert not preview_cached_models(registry, "gui", cache)
+    assert entry.path.read_bytes() == b"incumbent"
+
+
+def test_external_publication_during_staging_is_preserved(tmp_path: Path) -> None:
+    registry = ComponentRegistry(tmp_path / "components.json")
+    entry = ModelCacheEntry(tmp_path / "hub", "pdomain/models", "a" * 40, "model.pt")
+
+    def fetch(cache: Path) -> Path:
+        _ = entry.path.write_bytes(b"incumbent")
+        return _stage(entry, cache)
+
+    assert publish_model_download("cli", "installer", entry, fetch, registry=registry) == entry.path
+    assert entry.path.read_bytes() == b"incumbent"
+    assert not registry.list()
+
+
+def test_external_publication_at_no_replace_boundary_is_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = ComponentRegistry(tmp_path / "components.json")
+    entry = ModelCacheEntry(tmp_path / "hub", "pdomain/models", "a" * 40, "model.pt")
+
+    def late_publish(_source: Path, destination: Path) -> str:
+        _ = destination.write_bytes(b"incumbent")
+        raise FileExistsError(errno.EEXIST, "Model already exists", destination)
+
+    monkeypatch.setattr(model_components, "_publish_snapshot", late_publish)
+    assert (
+        publish_model_download(
+            "cli", "installer", entry, lambda stage: _stage(entry, stage), registry=registry
+        )
+        == entry.path
+    )
+    assert entry.path.read_bytes() == b"incumbent"
+    assert not registry.list()
+
+
+def test_known_publication_survives_failure_to_stage_later_file(tmp_path: Path) -> None:
+    registry = ComponentRegistry(tmp_path / "components.json")
+    cache = tmp_path / "hub"
+    first = ModelCacheEntry(cache, "pdomain/models", "a" * 40, "model.pt")
+    second = ModelCacheEntry(cache, "pdomain/models", "a" * 40, "model.arch")
+
+    def fail(stage: Path) -> Path:
+        _ = _stage(second, stage, b"incomplete")
+        raise RuntimeError("network interrupted")
+
+    assert (
+        publish_model_download(
+            "cli", "installer", first, lambda stage: _stage(first, stage), registry=registry
+        )
+        == first.path
+    )
+    with pytest.raises(RuntimeError, match="network interrupted"):
+        _ = publish_model_download("cli", "installer", second, fail, registry=registry)
+    assert [record.identity for record in registry.list()] == [first.identity]
+    assert not tuple(first.repository.glob(".pdomain-model-*"))
+    assert not second.path.exists()
+
+    def unexpected(_stage: Path) -> Path:
+        pytest.fail("A known exact file should be reused")
+
+    _ = publish_model_download("gui", "runtime", first, unexpected, registry=registry)
+    registry.release("cli")
+    (selection,) = preview_cached_models(registry, "gui", cache)
+    assert remove_model_entry(registry, "gui", selection, siblings_safe=lambda: True)
+    assert not first.path.exists()
+
+
+def test_fetcher_uses_private_cache_only_for_pinned_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from huggingface_hub import constants, file_download
+
+    cache = tmp_path / "hub"
+    settings = tmp_path / "suite"
+    revision = "a" * 40
+    requests: list[Path] = []
+    monkeypatch.setenv("PD_SUITE_DATA_DIR", str(settings))
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(cache))
+
+    def download(*, repo_id: str, filename: str, revision: str | None, cache_dir: Path) -> str:
+        requests.append(cache_dir)
+        entry = ModelCacheEntry(cache_dir, repo_id, revision or "b" * 40, filename)
+        path = _stage(entry, cache_dir)
+        return str(path)
+
+    monkeypatch.setattr(file_download, "hf_hub_download", download)
+    fetch = make_model_file_fetcher("gui", "installer")
+    path = fetch("pdomain/models", "model.pt", revision)
+    _ = fetch("pdomain/models", "other.pt", None)
+    assert requests[0] != cache
+    assert not requests[0].exists()
+    assert requests[1] == cache
+    assert path.read_bytes() == b"weights"
+    assert not path.is_symlink()
+    entry = ModelCacheEntry(cache, "pdomain/models", revision, "model.pt")
+    assert [record.identity for record in ComponentRegistry().list()] == [entry.identity]
+
+
+def test_registry_write_failure_retains_published_model_without_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = ComponentRegistry(tmp_path / "components.json")
+    cache = tmp_path / "hub"
+    entry = ModelCacheEntry(cache, "pdomain/models", "a" * 40, "model.pt")
+    replace = Path.replace
+
+    def reject_registry_replace(path: Path, target: str | Path) -> Path:
+        if target == registry.path:
+            raise OSError(errno.ENOSPC, "Registry disk is full")
+        return replace(path, target)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(Path, "replace", reject_registry_replace)
+        with pytest.raises(OSError, match="Registry disk is full"):
+            _ = publish_model_download(
+                "cli", "runtime", entry, lambda stage: _stage(entry, stage), registry=registry
+            )
+
+    assert entry.path.read_bytes() == b"weights"
+    assert not tuple(entry.repository.glob(".pdomain-model-*"))
+
+    def unexpected_fetch(_stage: Path) -> Path:
+        pytest.fail("The published model should survive the registry error")
+
+    assert (
+        publish_model_download("cli", "runtime", entry, unexpected_fetch, registry=registry)
+        == entry.path
+    )
+    assert not registry.list()
+    assert not preview_cached_models(registry, "cli", cache)

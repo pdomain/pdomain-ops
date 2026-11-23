@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import errno
+import importlib
 import os
 import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, TypeVar
+from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from pdomain_ops.suite.component_files import file_identity
-from pdomain_ops.suite.components import ComponentProbe, ComponentRegistry
+from pdomain_ops.suite.components import ComponentRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -106,10 +109,157 @@ def track_model_download(
     *,
     registry: ComponentRegistry | None = None,
 ) -> _Result:
-    """Track only the stated cache entries populated by a model download."""
-    probes = tuple(ComponentProbe("model", entry.identity, entry.fingerprint) for entry in entries)
+    """Claim existing verified entries after an opaque legacy download."""
+    result = download()
     store = registry if registry is not None else ComponentRegistry()
-    return store.acquire_batch(app, source, probes, download)
+    for entry in entries:
+        try:
+            _ = store.acquire("model", entry.identity, app, source, probe=entry.fingerprint)
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return result
+
+
+class _NoReplaceUnavailableError(OSError):
+    """The cache filesystem cannot make a verified no-replace publication."""
+
+
+def _publish_snapshot(source: Path, destination: Path) -> str:
+    before = source.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_ino == 0 or before.st_nlink != 1:
+        raise _NoReplaceUnavailableError("The staged model has no verifiable file identity")
+    if destination.parent.resolve() != destination.parent:
+        raise ValueError("The snapshot directory is redirected")
+    try:
+        if os.name == "nt":
+            # Windows rename fails if the destination exists.
+            _ = source.rename(destination)
+        else:
+            os.link(source, destination)
+    except OSError as error:
+        if error.errno in {errno.EXDEV, errno.ENOSYS, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EPERM}:
+            raise _NoReplaceUnavailableError(
+                "The cache filesystem cannot publish a model safely"
+            ) from error
+        raise
+    if os.name != "nt":
+        source.unlink()
+    after = destination.lstat()
+    if (
+        (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        or not stat.S_ISREG(after.st_mode)
+        or after.st_nlink != 1
+    ):
+        raise ValueError("The published model changed before ownership could be confirmed")
+    return ":".join(str(value) for value in file_identity(after))
+
+
+def _claim_existing(
+    store: ComponentRegistry, app: str, source: str, entry: ModelCacheEntry
+) -> bool:
+    present = False
+
+    def probe() -> str | None:
+        nonlocal present
+        try:
+            fingerprint = entry.fingerprint()
+        except (OSError, RuntimeError, ValueError) as error:
+            raise _NoReplaceUnavailableError(
+                "The existing model cache cannot be verified"
+            ) from error
+        present = fingerprint is not None
+        return fingerprint
+
+    _ = store.acquire("model", entry.identity, app, source, probe=probe)
+    return present
+
+
+def publish_model_download(
+    app: str,
+    source: str,
+    entry: ModelCacheEntry,
+    fetch: Callable[[Path], Path],
+    *,
+    registry: ComponentRegistry | None = None,
+) -> Path:
+    """Download in private staging and claim only an exact no-replace publication."""
+    store = registry if registry is not None else ComponentRegistry()
+    if _claim_existing(store, app, source, entry):
+        return entry.path
+
+    entry.path.parent.mkdir(parents=True, exist_ok=True)
+    staging_parent = entry.repository
+    if staging_parent.stat().st_dev != entry.path.parent.stat().st_dev:
+        staging_parent = entry.path.parent
+    with TemporaryDirectory(prefix=".pdomain-model-", dir=staging_parent) as directory:
+        cache = Path(directory)
+        staged = entry.in_cache(cache)
+        if fetch(cache) != staged.path or staged.fingerprint() is None:
+            raise ValueError("Download returned a different model or revision")
+        payload = staged.path.resolve(strict=True)
+        if not payload.is_relative_to(cache):
+            raise ValueError("Staged model points outside the private download cache")
+        published: str | None = None
+
+        def install() -> None:
+            nonlocal published
+            published = _publish_snapshot(payload, entry.path)
+
+        def probe() -> str | None:
+            fingerprint = entry.fingerprint()
+            if published is not None and published != fingerprint:
+                raise ValueError("The published model changed before ownership could be recorded")
+            return fingerprint
+
+        try:
+            # An external reader may already be using the snapshot if the registry write fails.
+            _ = store.acquire("model", entry.identity, app, source, probe=probe, install=install)
+        except FileExistsError:
+            # A Hugging Face writer can publish independently of the component registry.
+            if not _claim_existing(store, app, source, entry):
+                raise
+    return entry.path
+
+
+@runtime_checkable
+class _HubDownloader(Protocol):
+    def hf_hub_download(
+        self, *, repo_id: str, filename: str, revision: str | None, cache_dir: Path
+    ) -> object: ...
+
+
+def make_model_file_fetcher(app: str, source: str) -> Callable[[str, str, str | None], Path]:
+    """Build a Book Tools resolver for managed pinned Hugging Face files."""
+    from huggingface_hub.constants import HF_HUB_CACHE
+
+    hub = importlib.import_module("huggingface_hub.file_download")
+    if not isinstance(hub, _HubDownloader):
+        raise TypeError("Hugging Face does not provide a file downloader")
+    cache = Path(HF_HUB_CACHE).absolute()
+
+    def fetch(repo: str, filename: str, revision: str | None) -> Path:
+        def download(cache_dir: Path) -> Path:
+            value = hub.hf_hub_download(
+                repo_id=repo, filename=filename, revision=revision, cache_dir=cache_dir
+            )
+            if not isinstance(value, str):
+                raise TypeError("Hugging Face did not return a cached model file")
+            return Path(value)
+
+        if revision is not None:
+            try:
+                entry = ModelCacheEntry(cache, repo, revision, filename)
+            except ValueError:
+                pass
+            else:
+                try:
+                    return publish_model_download(app, source, entry, download)
+                except _NoReplaceUnavailableError:
+                    pass
+        return download(cache)
+
+    return fetch
 
 
 def _safe_segment(part: str) -> bool:
@@ -132,8 +282,20 @@ class ModelCacheEntry:
         relative = PurePosixPath(filename)
         if not relative.parts or any(not _safe_segment(part) for part in relative.parts):
             raise ValueError("Invalid model filename")
+        self._repo_id = repo
+        self._revision = revision
+        self._filename = filename
         self._repo = cache.resolve() / ("models--" + "--".join(repo_parts))
         self.path = self._repo / "snapshots" / revision / relative
+
+    @property
+    def repository(self) -> Path:
+        """Return the model repository's cache directory."""
+        return self._repo
+
+    def in_cache(self, cache: Path) -> ModelCacheEntry:
+        """Address the same pinned file in a private staging cache."""
+        return ModelCacheEntry(cache, self._repo_id, self._revision, self._filename)
 
     @property
     def identity(self) -> str:
